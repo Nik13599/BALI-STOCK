@@ -1,0 +1,86 @@
+name: Build BALI STOCK
+
+on:
+  pull_request:
+    branches: ["main"]
+
+concurrency:
+  group: bali-stock-${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Generate platform wrappers
+        run: flutter create . --project-name bali_stock --org com.bali.stock --platforms=android,ios,windows
+      - run: flutter pub get
+      - run: flutter analyze
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter create . --project-name bali_stock --org com.bali.stock --platforms=android,ios,windows
+      - name: Ensure Android release internet permission
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('android/app/src/main/AndroidManifest.xml')
+          text = p.read_text(encoding='utf-8')
+          permission = '<uses-permission android:name="android.permission.INTERNET" />'
+          if 'android.permission.INTERNET' not in text:
+              text = text.replace('<manifest xmlns:android="http://schemas.android.com/apk/res/android">', '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n    ' + permission)
+              p.write_text(text, encoding='utf-8')
+          PY
+      - run: flutter pub get
+      - run: dart run flutter_launcher_icons
+      - run: flutter build apk --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BALI-STOCK-Android
+          path: build/app/outputs/flutter-apk/app-release.apk
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter config --enable-windows-desktop
+      - run: flutter create . --project-name bali_stock --org com.bali.stock --platforms=windows,android,ios
+      - run: flutter pub get
+      - run: dart run flutter_launcher_icons
+      - run: flutter build windows --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BALI-STOCK-Windows
+          path: build/windows/x64/runner/Release/
+
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter create . --project-name bali_stock --org com.bali.stock --platforms=android,ios,windows
+      - run: flutter pub get
+      - run: dart run flutter_launcher_icons
+      - run: flutter build ios --release --no-codesign
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BALI-STOCK-iOS-unsigned
+          path: build/ios/iphoneos/Runner.app/
