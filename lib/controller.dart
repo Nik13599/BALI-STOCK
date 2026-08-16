@@ -33,8 +33,10 @@ class WarehouseController extends ChangeNotifier {
   int? _lastRemoteVersion;
   Timer? _pollTimer;
   bool _remoteBusy = false;
+  bool _sharedOnline = false;
 
   bool get sharedSyncEnabled => true;
+  bool get sharedOnline => _sharedOnline;
   bool get hasOperationSession => _sessionPin != null;
 
   Future<void> initialize() async {
@@ -66,6 +68,7 @@ class WarehouseController extends ChangeNotifier {
       // A stale/offline device must never push its older catalog over newer
       // shared data merely because the user opened a protected section.
       final snapshot = await _remote.fetchSnapshot();
+      _sharedOnline = true;
       final remoteProducts = snapshot['products'];
       if (remoteProducts is List && remoteProducts.isNotEmpty) {
         await _syncRepository.applySnapshot(snapshot);
@@ -78,8 +81,12 @@ class WarehouseController extends ChangeNotifier {
       }
       await _syncAllDraftsBestEffort();
     } catch (e) {
-      _sessionPin = null;
-      rethrow;
+      // Local PIN verification has already happened in the UI. Keep the
+      // protected session open so an EXISTING local recount draft can be
+      // resumed offline. New recounts and final writes still require server.
+      _sharedOnline = false;
+      syncWarning = 'Нет связи с общей базой. Существующий черновик можно продолжить офлайн; провести операцию получится после восстановления интернета.';
+      notifyListeners();
     }
   }
 
@@ -104,6 +111,9 @@ class WarehouseController extends ChangeNotifier {
     required int minimumAmount,
     required StockUnit stockUnit,
   }) async {
+    if (!_sharedOnline && _sessionPin != null) {
+      throw StateError('Нельзя добавлять новую позицию без связи с общей базой.');
+    }
     await _repository.addProduct(
       name: name,
       categoryId: categoryId,
@@ -125,6 +135,9 @@ class WarehouseController extends ChangeNotifier {
     required int minimumAmount,
     required StockUnit stockUnit,
   }) async {
+    if (!_sharedOnline && _sessionPin != null) {
+      throw StateError('Нельзя редактировать каталог без связи с общей базой.');
+    }
     await _repository.updateProduct(
       productId: productId,
       name: name,
@@ -139,6 +152,7 @@ class WarehouseController extends ChangeNotifier {
 
   Future<void> receiveDelivery(List<DeliveryDraftLine> lines) async {
     final pin = _requireSessionPin();
+    if (!_sharedOnline) throw StateError('Поставку нельзя провести без связи с общей базой.');
     final response = await _remote.receiveDelivery(pin: pin, lines: lines);
     await _applyResponseSnapshot(response);
   }
@@ -150,6 +164,9 @@ class WarehouseController extends ChangeNotifier {
 
   Future<StocktakeDraft> createStocktakeDraft(String employeeName) async {
     _requireSessionPin();
+    if (!_sharedOnline) {
+      throw StateError('Без интернета можно продолжить только уже сохранённый черновик. Новый переучёт требует актуального общего склада.');
+    }
     final draft = await _repository.createStocktakeDraft(employeeName);
     await _reloadDrafts();
     await _syncDraftBestEffort(draft.id);
@@ -191,22 +208,23 @@ class WarehouseController extends ChangeNotifier {
 
   Future<void> deleteStocktakeDraft(int draftId) async {
     final draft = await _syncRepository.readDraft(draftId);
+    if (!_sharedOnline) {
+      throw StateError('Чтобы удалить общий черновик и начать заново, восстановите интернет. Текущий черновик можно продолжить офлайн.');
+    }
     await _repository.deleteStocktakeDraft(draftId);
     _draftSyncTimers.remove(draftId)?.cancel();
     await _reloadDrafts();
     final pin = _sessionPin;
     if (pin != null) {
-      try {
-        await _remote.deleteDraft(pin: pin, employee: draft.employeeName);
-      } catch (e) {
-        syncWarning = 'Черновик удалён локально, но сервер пока недоступен: $e';
-        notifyListeners();
-      }
+      await _remote.deleteDraft(pin: pin, employee: draft.employeeName);
     }
   }
 
   Future<int> completeStocktakeDraft(int draftId, int activeSeconds) async {
     final pin = _requireSessionPin();
+    if (!_sharedOnline) {
+      throw StateError('Переучёт сохранён как черновик, но провести его без интернета нельзя. Подключитесь к сети и нажмите «Завершить переучёт» ещё раз.');
+    }
     _draftSyncTimers.remove(draftId)?.cancel();
     final draft = await _syncRepository.readDraft(draftId);
     if (!draft.isComplete) throw StateError('Переучёт нельзя завершить: заполнены не все позиции');
@@ -238,6 +256,7 @@ class WarehouseController extends ChangeNotifier {
     _remoteBusy = true;
     try {
       final snapshot = await _remote.fetchSnapshot();
+      _sharedOnline = true;
       final remoteProducts = snapshot['products'];
       if (remoteProducts is List && remoteProducts.isNotEmpty) {
         await _syncRepository.applySnapshot(snapshot);
@@ -248,6 +267,7 @@ class WarehouseController extends ChangeNotifier {
         _lastRemoteVersion = _asInt(snapshot['version']);
       }
     } catch (e) {
+      _sharedOnline = false;
       if (!silent) rethrow;
       syncWarning = 'Офлайн-режим: общая база временно недоступна. Локальный черновик сохраняется.';
       notifyListeners();
@@ -260,11 +280,12 @@ class WarehouseController extends ChangeNotifier {
     if (_remoteBusy) return;
     try {
       final version = await _remote.fetchVersion();
+      _sharedOnline = true;
       if (_lastRemoteVersion == null || version != _lastRemoteVersion) {
         await _pullRemote(silent: true);
       }
     } catch (_) {
-      // Background polling is best-effort. Local drafts keep working offline.
+      _sharedOnline = false;
     }
   }
 
@@ -281,6 +302,7 @@ class WarehouseController extends ChangeNotifier {
   Future<void> _syncCatalogToServer() async {
     final pin = _requireSessionPin();
     final response = await _remote.syncCatalog(pin: pin, categories: categories, products: products);
+    _sharedOnline = true;
     final snapshot = response['snapshot'];
     if (snapshot is Map<String, dynamic>) {
       await _syncRepository.applySnapshot(snapshot);
@@ -299,6 +321,7 @@ class WarehouseController extends ChangeNotifier {
     final snapshot = Map<String, dynamic>.from(raw);
     await _syncRepository.applySnapshot(snapshot);
     _lastRemoteVersion = _asInt(snapshot['version']);
+    _sharedOnline = true;
     syncWarning = null;
     await _loadLocal();
   }
@@ -310,12 +333,13 @@ class WarehouseController extends ChangeNotifier {
 
   Future<void> _syncDraftBestEffort(int draftId) async {
     final pin = _sessionPin;
-    if (pin == null) return;
+    if (pin == null || !_sharedOnline) return;
     try {
       final draft = await _syncRepository.readDraft(draftId);
       await _remote.syncDraft(pin: pin, draft: draft);
       syncWarning = null;
     } catch (e) {
+      _sharedOnline = false;
       syncWarning = 'Черновик сохранён на устройстве. Сервер синхронизируется после восстановления связи.';
     }
     notifyListeners();
