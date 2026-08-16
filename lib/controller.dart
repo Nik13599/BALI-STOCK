@@ -61,8 +61,26 @@ class WarehouseController extends ChangeNotifier {
   Future<void> setOperationSessionPin(String pin) async {
     _sessionPin = pin;
     syncWarning = null;
-    await _syncCatalogToServer();
-    await _syncAllDraftsBestEffort();
+    try {
+      // The central database is authoritative once it contains a catalog.
+      // A stale/offline device must never push its older catalog over newer
+      // shared data merely because the user opened a protected section.
+      final snapshot = await _remote.fetchSnapshot();
+      final remoteProducts = snapshot['products'];
+      if (remoteProducts is List && remoteProducts.isNotEmpty) {
+        await _syncRepository.applySnapshot(snapshot);
+        _lastRemoteVersion = _asInt(snapshot['version']);
+        await _loadLocal();
+      } else {
+        // First protected session bootstraps the shared database from the
+        // built-in/local catalog and preserves already initialized balances.
+        await _syncCatalogToServer();
+      }
+      await _syncAllDraftsBestEffort();
+    } catch (e) {
+      _sessionPin = null;
+      rethrow;
+    }
   }
 
   void clearOperationSessionPin() {
@@ -121,7 +139,6 @@ class WarehouseController extends ChangeNotifier {
 
   Future<void> receiveDelivery(List<DeliveryDraftLine> lines) async {
     final pin = _requireSessionPin();
-    await _syncCatalogToServer();
     final response = await _remote.receiveDelivery(pin: pin, lines: lines);
     await _applyResponseSnapshot(response);
   }
@@ -133,7 +150,6 @@ class WarehouseController extends ChangeNotifier {
 
   Future<StocktakeDraft> createStocktakeDraft(String employeeName) async {
     _requireSessionPin();
-    await _syncCatalogToServer();
     final draft = await _repository.createStocktakeDraft(employeeName);
     await _reloadDrafts();
     await _syncDraftBestEffort(draft.id);
@@ -194,7 +210,6 @@ class WarehouseController extends ChangeNotifier {
     _draftSyncTimers.remove(draftId)?.cancel();
     final draft = await _syncRepository.readDraft(draftId);
     if (!draft.isComplete) throw StateError('Переучёт нельзя завершить: заполнены не все позиции');
-    await _syncCatalogToServer();
     final response = await _remote.completeStocktake(pin: pin, draft: draft, activeSeconds: activeSeconds);
     await _repository.deleteStocktakeDraft(draftId);
     await _applyResponseSnapshot(response);
