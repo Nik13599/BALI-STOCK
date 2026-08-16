@@ -78,6 +78,7 @@ class StockOperationLine {
     required this.categoryName,
     required this.bottleMl,
     required this.beforeTotalMl,
+    required this.beforeInitialized,
     required this.changeTotalMl,
     required this.afterTotalMl,
   });
@@ -87,6 +88,7 @@ class StockOperationLine {
   final String categoryName;
   final int bottleMl;
   final int beforeTotalMl;
+  final bool beforeInitialized;
   final int changeTotalMl;
   final int afterTotalMl;
 }
