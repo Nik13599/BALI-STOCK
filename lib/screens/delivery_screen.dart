@@ -129,7 +129,7 @@ Future<DeliveryDraftLine?> showDeliveryLineDialog(BuildContext context, List<Pro
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   DropdownButtonFormField<int>(
-                    value: productId,
+                    initialValue: productId,
                     isExpanded: true,
                     decoration: const InputDecoration(labelText: 'Позиция'),
                     items: products
