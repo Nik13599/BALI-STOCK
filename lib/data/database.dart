@@ -27,7 +27,7 @@ class BaliStockDatabase {
     return factory.openDatabase(
       p.join(dbPath, 'bali_stock.db'),
       options: OpenDatabaseOptions(
-        version: 4,
+        version: 5,
         onConfigure: (db) async {
           await db.execute('PRAGMA foreign_keys = ON');
         },
@@ -56,6 +56,7 @@ class BaliStockDatabase {
             )
           ''');
           await _createOperationTables(db);
+          await _createDraftTables(db);
           await _createIndexes(db);
           await _seedCatalog(db);
         },
@@ -71,7 +72,24 @@ class BaliStockDatabase {
             await db.execute("ALTER TABLE operation_lines ADD COLUMN stock_unit TEXT NOT NULL DEFAULT 'ml'");
             await _normalizeLegacyNames(db);
           }
+          if (oldVersion < 5) {
+            await db.execute('ALTER TABLE operations ADD COLUMN employee_name TEXT');
+            await db.execute('ALTER TABLE operations ADD COLUMN started_at TEXT');
+            await db.execute('ALTER TABLE operations ADD COLUMN completed_at TEXT');
+            await db.execute('ALTER TABLE operations ADD COLUMN active_seconds INTEGER NOT NULL DEFAULT 0');
+            await db.execute('ALTER TABLE operations ADD COLUMN total_seconds INTEGER NOT NULL DEFAULT 0');
+            await _createDraftTables(db);
+          }
+          await _createIndexes(db);
           await _seedCatalog(db);
+        },
+        onOpen: (db) async {
+          // If the process was killed while counting, treat the session as paused.
+          await db.update(
+            'stocktake_drafts',
+            {'status': 'draft'},
+            where: "status = 'in_progress'",
+          );
         },
       ),
     );
@@ -82,7 +100,12 @@ class BaliStockDatabase {
       CREATE TABLE operations (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         type TEXT NOT NULL CHECK (type IN ('delivery', 'stocktake')),
-        created_at TEXT NOT NULL
+        created_at TEXT NOT NULL,
+        employee_name TEXT,
+        started_at TEXT,
+        completed_at TEXT,
+        active_seconds INTEGER NOT NULL DEFAULT 0,
+        total_seconds INTEGER NOT NULL DEFAULT 0
       )
     ''');
     await db.execute('''
@@ -103,9 +126,53 @@ class BaliStockDatabase {
     ''');
   }
 
+  static Future<void> _createDraftTables(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS stocktake_drafts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        employee_name TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('draft', 'in_progress')) DEFAULT 'draft',
+        started_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        active_seconds INTEGER NOT NULL DEFAULT 0,
+        last_product_id INTEGER,
+        total_count INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS stocktake_draft_lines (
+        draft_id INTEGER NOT NULL,
+        product_id INTEGER NOT NULL,
+        product_name TEXT NOT NULL,
+        category_name TEXT NOT NULL,
+        package_size INTEGER NOT NULL,
+        stock_unit TEXT NOT NULL,
+        before_total INTEGER NOT NULL DEFAULT 0,
+        before_initialized INTEGER NOT NULL DEFAULT 1,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        whole_packages INTEGER,
+        extra_amount INTEGER,
+        PRIMARY KEY (draft_id, product_id),
+        FOREIGN KEY(draft_id) REFERENCES stocktake_drafts(id) ON DELETE CASCADE
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS app_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      )
+    ''');
+  }
+
   static Future<void> _createIndexes(Database db) async {
-    await db.execute('CREATE INDEX idx_products_category ON products(category_id)');
-    await db.execute('CREATE INDEX idx_operations_created_at ON operations(created_at DESC)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_products_category ON products(category_id)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_operations_created_at ON operations(created_at DESC)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_stocktake_draft_lines_order ON stocktake_draft_lines(draft_id, sort_order)');
+    await db.execute('''
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_stocktake_drafts_employee_active
+      ON stocktake_drafts(employee_name COLLATE NOCASE)
+      WHERE status IN ('draft', 'in_progress')
+    ''');
   }
 
   static Future<void> _normalizeLegacyNames(Database db) async {
