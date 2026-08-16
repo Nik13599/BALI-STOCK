@@ -12,6 +12,7 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   crypto: ^3.0.7
+  flutter_svg: ^2.2.1
   path: ^1.9.1
   sqflite: ^2.4.3
   sqflite_common: ^2.5.11
@@ -21,6 +22,21 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/branding/bali_stock_logo.svg
+
+flutter_launcher_icons:
+  image_path: assets/branding/bali_stock_logo.png
+  android: true
+  ios: true
+  remove_alpha_ios: true
+  adaptive_icon_background: "#101A1F"
+  adaptive_icon_foreground: assets/branding/bali_stock_logo.png
+  windows:
+    generate: true
+    image_path: assets/branding/bali_stock_logo.png
+    icon_size: 256
