@@ -1,0 +1,70 @@
+name: Build BALI STOCK
+
+on:
+  push:
+    branches: ["agent/bali-stock-mvp"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Generate platform wrappers
+        run: flutter create . --project-name bali_stock --org com.bali.stock --platforms=android,ios,windows
+      - run: flutter pub get
+      - run: flutter analyze
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter create . --project-name bali_stock --org com.bali.stock --platforms=android,ios,windows
+      - run: flutter pub get
+      - run: flutter build apk --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BALI-STOCK-Android
+          path: build/app/outputs/flutter-apk/app-release.apk
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter config --enable-windows-desktop
+      - run: flutter create . --project-name bali_stock --org com.bali.stock --platforms=windows,android,ios
+      - run: flutter pub get
+      - run: flutter build windows --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BALI-STOCK-Windows
+          path: build/windows/x64/runner/Release/
+
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter create . --project-name bali_stock --org com.bali.stock --platforms=android,ios,windows
+      - run: flutter pub get
+      - run: flutter build ios --release --no-codesign
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BALI-STOCK-iOS-unsigned
+          path: build/ios/iphoneos/Runner.app/
