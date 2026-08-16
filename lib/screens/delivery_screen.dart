@@ -60,7 +60,7 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
                       children: [
                         const InfoBanner(
                           icon: Icons.lock_outline,
-                          text: 'Доступ к приёмке подтверждается паролем. После проведения поставки количество автоматически прибавляется к текущему складу.',
+                          text: 'После проведения поставки количество автоматически прибавляется к текущему складу в единице конкретной позиции.',
                         ),
                         const SizedBox(height: 20),
                         Row(
@@ -84,14 +84,15 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
                                   Builder(
                                     builder: (context) {
                                       final line = _lines.values.elementAt(i);
+                                      final added = line.bottles * line.product.packageSize + line.extraMl;
                                       return ListTile(
                                         contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
                                         title: Text(line.product.name, style: const TextStyle(fontWeight: FontWeight.w700)),
-                                        subtitle: Text('${line.product.categoryName} • бутылка ${formatBottleVolume(line.product.bottleMl)}'),
+                                        subtitle: Text('${line.product.categoryName} • ${_productUnitLabel(line.product)}'),
                                         trailing: Row(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
-                                            Text('+${line.bottles} бут. + ${line.extraMl} мл', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+                                            Text('+${formatStockParts(added, line.product.packageSize, line.product.stockUnit)}', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
                                             IconButton(onPressed: _saving ? null : () => setState(() => _lines.remove(line.product.id)), icon: const Icon(Icons.delete_outline)),
                                           ],
                                         ),
@@ -117,10 +118,18 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
   }
 }
 
+String _productUnitLabel(Product product) {
+  return switch (product.stockUnit) {
+    StockUnit.ml => 'бутылка ${formatPackageSize(product.packageSize, product.stockUnit)}',
+    StockUnit.gram => 'упаковка ${formatPackageSize(product.packageSize, product.stockUnit)}',
+    StockUnit.piece => 'штучный учёт',
+  };
+}
+
 Future<DeliveryDraftLine?> showDeliveryLineDialog(BuildContext context, List<Product> products) async {
   if (products.isEmpty) return null;
   var productId = products.first.id;
-  final bottles = TextEditingController(text: '0');
+  final whole = TextEditingController(text: '0');
   final extra = TextEditingController(text: '0');
   final key = GlobalKey<FormState>();
 
@@ -129,10 +138,17 @@ Future<DeliveryDraftLine?> showDeliveryLineDialog(BuildContext context, List<Pro
     builder: (dialogContext) => StatefulBuilder(
       builder: (dialogContext, setState) {
         final product = products.firstWhere((p) => p.id == productId);
+        final wholeLabel = switch (product.stockUnit) {
+          StockUnit.ml => 'Бутылок принято',
+          StockUnit.gram => 'Упаковок принято',
+          StockUnit.piece => 'Количество, шт.',
+        };
+        final extraLabel = product.stockUnit == StockUnit.ml ? 'Доп. объём, мл' : 'Доп. остаток, г';
+
         return AlertDialog(
           title: const Text('Позиция поставки'),
           content: SizedBox(
-            width: 520,
+            width: 540,
             child: Form(
               key: key,
               child: Column(
@@ -143,28 +159,37 @@ Future<DeliveryDraftLine?> showDeliveryLineDialog(BuildContext context, List<Pro
                     isExpanded: true,
                     decoration: const InputDecoration(labelText: 'Позиция'),
                     items: products
-                        .map((p) => DropdownMenuItem(value: p.id, child: Text('${p.categoryName} — ${p.name} (${formatBottleVolume(p.bottleMl)})')))
+                        .map((p) => DropdownMenuItem(value: p.id, child: Text('${p.categoryName} — ${p.name} (${_productUnitLabel(p)})')))
                         .toList(growable: false),
                     onChanged: (value) {
-                      if (value != null) setState(() => productId = value);
+                      if (value != null) {
+                        setState(() {
+                          productId = value;
+                          whole.text = '0';
+                          extra.text = '0';
+                        });
+                      }
                     },
                   ),
                   const SizedBox(height: 12),
-                  TwoFields(
-                    first: IntegerField(controller: bottles, label: 'Бутылок принято', min: 0),
-                    second: IntegerField(
-                      controller: extra,
-                      label: 'Доп. объём, мл',
-                      min: 0,
-                      validator: (value) {
-                        final base = integerValidator(value, min: 0);
-                        if (base != null) return base;
-                        final parsed = int.tryParse(value ?? '');
-                        if (parsed != null && parsed >= product.bottleMl) return 'Меньше ${product.bottleMl} мл';
-                        return null;
-                      },
+                  if (product.stockUnit == StockUnit.piece)
+                    IntegerField(controller: whole, label: wholeLabel, min: 0)
+                  else
+                    TwoFields(
+                      first: IntegerField(controller: whole, label: wholeLabel, min: 0),
+                      second: IntegerField(
+                        controller: extra,
+                        label: extraLabel,
+                        min: 0,
+                        validator: (value) {
+                          final base = integerValidator(value, min: 0);
+                          if (base != null) return base;
+                          final parsed = int.tryParse(value ?? '');
+                          if (parsed != null && parsed >= product.packageSize) return 'Меньше ${product.packageSize} ${product.stockUnit.symbol}';
+                          return null;
+                        },
+                      ),
                     ),
-                  ),
                 ],
               ),
             ),
@@ -174,13 +199,13 @@ Future<DeliveryDraftLine?> showDeliveryLineDialog(BuildContext context, List<Pro
             FilledButton(
               onPressed: () {
                 if (!(key.currentState?.validate() ?? false)) return;
-                final bottleCount = int.parse(bottles.text);
-                final extraMl = int.parse(extra.text);
-                if (bottleCount == 0 && extraMl == 0) {
+                final wholeCount = int.parse(whole.text);
+                final extraAmount = product.stockUnit == StockUnit.piece ? 0 : int.parse(extra.text);
+                if (wholeCount == 0 && extraAmount == 0) {
                   showErrorSnack(dialogContext, 'Количество поставки не может быть нулевым');
                   return;
                 }
-                Navigator.of(dialogContext).pop(DeliveryDraftLine(product: product, bottles: bottleCount, extraMl: extraMl));
+                Navigator.of(dialogContext).pop(DeliveryDraftLine(product: product, bottles: wholeCount, extraMl: extraAmount));
               },
               child: const Text('Добавить'),
             ),
@@ -189,7 +214,7 @@ Future<DeliveryDraftLine?> showDeliveryLineDialog(BuildContext context, List<Pro
       },
     ),
   );
-  bottles.dispose();
+  whole.dispose();
   extra.dispose();
   return result;
 }
