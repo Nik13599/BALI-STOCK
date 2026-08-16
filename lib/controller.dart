@@ -50,18 +50,20 @@ class WarehouseController extends ChangeNotifier {
   Future<void> addProduct({
     required String name,
     required int categoryId,
-    required int bottleMl,
-    required int wholeBottles,
-    required int extraMl,
-    required int minimumMl,
+    required int packageSize,
+    required int wholePackages,
+    required int extraAmount,
+    required int minimumAmount,
+    required StockUnit stockUnit,
   }) async {
     await _repository.addProduct(
       name: name,
       categoryId: categoryId,
-      bottleMl: bottleMl,
-      wholeBottles: wholeBottles,
-      extraMl: extraMl,
-      minimumMl: minimumMl,
+      packageSize: packageSize,
+      wholePackages: wholePackages,
+      extraAmount: extraAmount,
+      minimumAmount: minimumAmount,
+      stockUnit: stockUnit,
     );
     await _reloadAfterMutation();
   }
@@ -70,15 +72,17 @@ class WarehouseController extends ChangeNotifier {
     required int productId,
     required String name,
     required int categoryId,
-    required int bottleMl,
-    required int minimumMl,
+    required int packageSize,
+    required int minimumAmount,
+    required StockUnit stockUnit,
   }) async {
     await _repository.updateProduct(
       productId: productId,
       name: name,
       categoryId: categoryId,
-      bottleMl: bottleMl,
-      minimumMl: minimumMl,
+      packageSize: packageSize,
+      minimumAmount: minimumAmount,
+      stockUnit: stockUnit,
     );
     await _reloadAfterMutation();
   }
