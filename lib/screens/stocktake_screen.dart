@@ -17,7 +17,7 @@ class StocktakeScreen extends StatefulWidget {
 
 class _StocktakeScreenState extends State<StocktakeScreen> {
   late final List<Product> _products;
-  final Map<int, TextEditingController> _bottles = {};
+  final Map<int, TextEditingController> _whole = {};
   final Map<int, TextEditingController> _extra = {};
   bool _saving = false;
 
@@ -26,14 +26,14 @@ class _StocktakeScreenState extends State<StocktakeScreen> {
     super.initState();
     _products = List<Product>.from(widget.controller.products);
     for (final product in _products) {
-      _bottles[product.id] = TextEditingController();
+      _whole[product.id] = TextEditingController();
       _extra[product.id] = TextEditingController();
     }
   }
 
   @override
   void dispose() {
-    for (final value in _bottles.values) {
+    for (final value in _whole.values) {
       value.dispose();
     }
     for (final value in _extra.values) {
@@ -43,12 +43,16 @@ class _StocktakeScreenState extends State<StocktakeScreen> {
   }
 
   bool _filled(Product product) {
-    final bottlesText = _bottles[product.id]!.text;
+    final wholeText = _whole[product.id]!.text;
+    if (wholeText.isEmpty) return false;
+    final whole = int.tryParse(wholeText);
+    if (whole == null || whole < 0) return false;
+    if (product.stockUnit == StockUnit.piece) return true;
+
     final extraText = _extra[product.id]!.text;
-    if (bottlesText.isEmpty || extraText.isEmpty) return false;
-    final bottles = int.tryParse(bottlesText);
+    if (extraText.isEmpty) return false;
     final extra = int.tryParse(extraText);
-    return bottles != null && bottles >= 0 && extra != null && extra >= 0 && extra < product.bottleMl;
+    return extra != null && extra >= 0 && extra < product.packageSize;
   }
 
   int get _filledCount => _products.where(_filled).length;
@@ -59,8 +63,8 @@ class _StocktakeScreenState extends State<StocktakeScreen> {
     final values = <int, StocktakeDraftLine>{};
     for (final product in _products) {
       values[product.id] = StocktakeDraftLine(
-        bottles: int.parse(_bottles[product.id]!.text),
-        extraMl: int.parse(_extra[product.id]!.text),
+        bottles: int.parse(_whole[product.id]!.text),
+        extraMl: product.stockUnit == StockUnit.piece ? 0 : int.parse(_extra[product.id]!.text),
       );
     }
 
@@ -102,7 +106,7 @@ class _StocktakeScreenState extends State<StocktakeScreen> {
               children: [
                 const InfoBanner(
                   icon: Icons.fact_check_outlined,
-                  text: 'Нужно пересчитать абсолютно все категории и все позиции. Пустое поле не считается нулём: если товара нет, введите 0 бутылок и 0 мл.',
+                  text: 'Нужно пересчитать абсолютно все категории и все позиции. Пустое поле не считается нулём. Для бутылок вводятся бутылки + мл, для весовых позиций упаковки + граммы, для штучных — количество штук.',
                 ),
                 const SizedBox(height: 14),
                 Row(
@@ -129,7 +133,7 @@ class _StocktakeScreenState extends State<StocktakeScreen> {
                   _CategoryStocktakeCard(
                     title: entry.key,
                     products: entry.value,
-                    bottles: _bottles,
+                    whole: _whole,
                     extra: _extra,
                     isFilled: _filled,
                     enabled: !_saving,
@@ -180,7 +184,7 @@ class _CategoryStocktakeCard extends StatelessWidget {
   const _CategoryStocktakeCard({
     required this.title,
     required this.products,
-    required this.bottles,
+    required this.whole,
     required this.extra,
     required this.isFilled,
     required this.enabled,
@@ -189,7 +193,7 @@ class _CategoryStocktakeCard extends StatelessWidget {
 
   final String title;
   final List<Product> products;
-  final Map<int, TextEditingController> bottles;
+  final Map<int, TextEditingController> whole;
   final Map<int, TextEditingController> extra;
   final bool Function(Product) isFilled;
   final bool enabled;
@@ -214,7 +218,7 @@ class _CategoryStocktakeCard extends StatelessWidget {
           for (var i = 0; i < products.length; i++) ...[
             _ProductStocktakeRow(
               product: products[i],
-              bottlesController: bottles[products[i].id]!,
+              wholeController: whole[products[i].id]!,
               extraController: extra[products[i].id]!,
               filled: isFilled(products[i]),
               enabled: enabled,
@@ -231,7 +235,7 @@ class _CategoryStocktakeCard extends StatelessWidget {
 class _ProductStocktakeRow extends StatelessWidget {
   const _ProductStocktakeRow({
     required this.product,
-    required this.bottlesController,
+    required this.wholeController,
     required this.extraController,
     required this.filled,
     required this.enabled,
@@ -239,7 +243,7 @@ class _ProductStocktakeRow extends StatelessWidget {
   });
 
   final Product product;
-  final TextEditingController bottlesController;
+  final TextEditingController wholeController;
   final TextEditingController extraController;
   final bool filled;
   final bool enabled;
@@ -247,6 +251,15 @@ class _ProductStocktakeRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final before = product.stockInitialized
+        ? formatStockParts(product.totalAmount, product.packageSize, product.stockUnit)
+        : 'остаток ещё не введён';
+    final descriptor = switch (product.stockUnit) {
+      StockUnit.ml => 'Бутылка ${formatPackageSize(product.packageSize, product.stockUnit)}',
+      StockUnit.gram => 'Упаковка ${formatPackageSize(product.packageSize, product.stockUnit)}',
+      StockUnit.piece => 'Штучный учёт',
+    };
+
     return Padding(
       padding: const EdgeInsets.all(16),
       child: LayoutBuilder(
@@ -262,34 +275,48 @@ class _ProductStocktakeRow extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 3),
-              Text('Тара ${formatBottleVolume(product.bottleMl)} • до переучёта: ${product.wholeBottles} бут. + ${product.extraMl} мл', style: Theme.of(context).textTheme.bodySmall),
+              Text('$descriptor • до переучёта: $before', style: Theme.of(context).textTheme.bodySmall),
             ],
           );
-          final fields = Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: bottlesController,
-                  enabled: enabled,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  onChanged: (_) => onChanged(),
-                  decoration: const InputDecoration(labelText: 'Целых бутылок', hintText: '0'),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: TextField(
-                  controller: extraController,
-                  enabled: enabled,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  onChanged: (_) => onChanged(),
-                  decoration: InputDecoration(labelText: 'Остаток, мл', hintText: '0', helperText: '< ${product.bottleMl} мл'),
-                ),
-              ),
-            ],
+
+          final wholeLabel = switch (product.stockUnit) {
+            StockUnit.ml => 'Целых бутылок',
+            StockUnit.gram => 'Целых упаковок',
+            StockUnit.piece => 'Количество, шт.',
+          };
+
+          final wholeField = TextField(
+            controller: wholeController,
+            enabled: enabled,
+            keyboardType: TextInputType.number,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            onChanged: (_) => onChanged(),
+            decoration: InputDecoration(labelText: wholeLabel, hintText: '0'),
           );
+
+          final fields = product.stockUnit == StockUnit.piece
+              ? wholeField
+              : Row(
+                  children: [
+                    Expanded(child: wholeField),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: TextField(
+                        controller: extraController,
+                        enabled: enabled,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                        onChanged: (_) => onChanged(),
+                        decoration: InputDecoration(
+                          labelText: product.stockUnit == StockUnit.ml ? 'Остаток, мл' : 'Остаток, г',
+                          hintText: '0',
+                          helperText: '< ${product.packageSize} ${product.stockUnit.symbol}',
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+
           if (compact) return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [title, const SizedBox(height: 12), fields]);
           return Row(children: [Expanded(flex: 4, child: title), const SizedBox(width: 20), Expanded(flex: 3, child: fields)]);
         },
