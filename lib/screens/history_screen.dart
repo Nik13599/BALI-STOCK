@@ -94,26 +94,35 @@ class _HistoryLine extends StatelessWidget {
   Widget build(BuildContext context) {
     final initialBalance = !line.beforeInitialized && !delivery;
     final diff = line.changeTotalMl;
-    final diffText = '${diff >= 0 ? '+' : '−'}${formatLiters(diff.abs())}';
+    final diffText = '${diff >= 0 ? '+' : '−'}${formatTotalAmount(diff.abs(), line.stockUnit)}';
     final diffColor = diff < 0 ? Theme.of(context).colorScheme.error : Theme.of(context).colorScheme.primary;
+    final descriptor = switch (line.stockUnit) {
+      StockUnit.ml => 'бутылка ${formatPackageSize(line.bottleMl, line.stockUnit)}',
+      StockUnit.gram => 'упаковка ${formatPackageSize(line.bottleMl, line.stockUnit)}',
+      StockUnit.piece => 'штучный учёт',
+    };
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(line.productName, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
-          Text('${line.categoryName} • тара ${formatBottleVolume(line.bottleMl)}'),
+          Text('${line.categoryName} • $descriptor'),
           const SizedBox(height: 8),
           Wrap(
             spacing: 18,
             runSpacing: 6,
             children: [
-              Text(initialBalance ? 'Было: остаток не был задан' : 'Было: ${formatStockParts(line.beforeTotalMl, line.bottleMl)}'),
+              Text(initialBalance ? 'Было: остаток не был задан' : 'Было: ${formatStockParts(line.beforeTotalMl, line.bottleMl, line.stockUnit)}'),
               if (initialBalance)
-                Text('Первичный остаток: ${formatStockParts(line.afterTotalMl, line.bottleMl)}', style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w700))
+                Text(
+                  'Первичный остаток: ${formatStockParts(line.afterTotalMl, line.bottleMl, line.stockUnit)}',
+                  style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w700),
+                )
               else
                 Text(delivery ? 'Принято: $diffText' : 'Расхождение: $diffText', style: TextStyle(color: diffColor, fontWeight: FontWeight.w700)),
-              Text('Стало: ${formatStockParts(line.afterTotalMl, line.bottleMl)}', style: const TextStyle(fontWeight: FontWeight.w800)),
+              Text('Стало: ${formatStockParts(line.afterTotalMl, line.bottleMl, line.stockUnit)}', style: const TextStyle(fontWeight: FontWeight.w800)),
             ],
           ),
         ],
