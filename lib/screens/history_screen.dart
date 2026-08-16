@@ -92,6 +92,7 @@ class _HistoryLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final initialBalance = !line.beforeInitialized && !delivery;
     final diff = line.changeTotalMl;
     final diffText = '${diff >= 0 ? '+' : '−'}${formatLiters(diff.abs())}';
     final diffColor = diff < 0 ? Theme.of(context).colorScheme.error : Theme.of(context).colorScheme.primary;
@@ -107,8 +108,11 @@ class _HistoryLine extends StatelessWidget {
             spacing: 18,
             runSpacing: 6,
             children: [
-              Text('Было: ${formatStockParts(line.beforeTotalMl, line.bottleMl)}'),
-              Text(delivery ? 'Принято: $diffText' : 'Расхождение: $diffText', style: TextStyle(color: diffColor, fontWeight: FontWeight.w700)),
+              Text(initialBalance ? 'Было: остаток не был задан' : 'Было: ${formatStockParts(line.beforeTotalMl, line.bottleMl)}'),
+              if (initialBalance)
+                Text('Первичный остаток: ${formatStockParts(line.afterTotalMl, line.bottleMl)}', style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w700))
+              else
+                Text(delivery ? 'Принято: $diffText' : 'Расхождение: $diffText', style: TextStyle(color: diffColor, fontWeight: FontWeight.w700)),
               Text('Стало: ${formatStockParts(line.afterTotalMl, line.bottleMl)}', style: const TextStyle(fontWeight: FontWeight.w800)),
             ],
           ),
