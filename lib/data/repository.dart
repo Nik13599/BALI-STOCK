@@ -1,3 +1,5 @@
+import 'package:sqflite_common/sqlite_api.dart';
+
 import '../models.dart';
 import 'database.dart';
 
@@ -154,64 +156,268 @@ class WarehouseRepository {
     });
   }
 
-  Future<void> conductStocktake(Map<int, StocktakeDraftLine> values) async {
+  Future<String?> getLastStocktakeEmployee() async {
     final db = await _database.database;
+    final rows = await db.query('app_settings', columns: ['value'], where: 'key = ?', whereArgs: ['last_stocktake_employee'], limit: 1);
+    return rows.isEmpty ? null : rows.first['value'] as String;
+  }
+
+  Future<void> _setLastStocktakeEmployee(DatabaseExecutor db, String employeeName) async {
+    await db.insert(
+      'app_settings',
+      {'key': 'last_stocktake_employee', 'value': employeeName},
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<List<StocktakeDraft>> getActiveStocktakeDrafts() async {
+    final db = await _database.database;
+    final rows = await db.query('stocktake_drafts', orderBy: 'started_at DESC');
+    final result = <StocktakeDraft>[];
+    for (final row in rows) {
+      result.add(await _readDraft(db, row['id'] as int));
+    }
+    return result;
+  }
+
+  Future<StocktakeDraft?> getActiveStocktakeDraft(String employeeName) async {
+    final clean = employeeName.trim();
+    if (clean.isEmpty) return null;
+    final db = await _database.database;
+    final rows = await db.rawQuery('''
+      SELECT id FROM stocktake_drafts
+      WHERE employee_name = ? COLLATE NOCASE
+      ORDER BY started_at DESC
+      LIMIT 1
+    ''', [clean]);
+    if (rows.isEmpty) return null;
+    return _readDraft(db, rows.first['id'] as int);
+  }
+
+  Future<StocktakeDraft> createStocktakeDraft(String employeeName) async {
+    final clean = employeeName.trim();
+    if (clean.isEmpty) throw ArgumentError('Укажите ФИО сотрудника');
+    final db = await _database.database;
+    late int draftId;
 
     await db.transaction((txn) async {
-      final rows = await txn.rawQuery('''
-        SELECT p.*, c.name AS category_name
+      final existing = await txn.rawQuery('''
+        SELECT id FROM stocktake_drafts
+        WHERE employee_name = ? COLLATE NOCASE
+        LIMIT 1
+      ''', [clean]);
+      if (existing.isNotEmpty) {
+        draftId = existing.first['id'] as int;
+        await _setLastStocktakeEmployee(txn, clean);
+        return;
+      }
+
+      final products = await txn.rawQuery('''
+        SELECT p.*, c.name AS category_name, c.sort_order AS category_sort
         FROM products p
         JOIN categories c ON c.id = p.category_id
         WHERE p.active = 1
-        ORDER BY c.sort_order, p.name COLLATE NOCASE
+        ORDER BY c.sort_order, c.name COLLATE NOCASE, p.name COLLATE NOCASE
       ''');
-      final products = rows.map(_productFromMap).toList(growable: false);
       if (products.isEmpty) throw StateError('На складе нет активных позиций');
-      if (values.length != products.length || products.any((p) => !values.containsKey(p.id))) {
-        throw StateError('Переучёт нельзя провести: заполнены не все позиции');
-      }
 
-      for (final product in products) {
-        final value = values[product.id]!;
-        _validateQuantity(value.bottles, value.extraMl, product.packageSize, product.stockUnit, product.name);
-      }
-
-      final operationId = await txn.insert('operations', {
-        'type': 'stocktake',
-        'created_at': DateTime.now().toIso8601String(),
+      final now = DateTime.now().toIso8601String();
+      draftId = await txn.insert('stocktake_drafts', {
+        'employee_name': clean,
+        'status': 'in_progress',
+        'started_at': now,
+        'updated_at': now,
+        'active_seconds': 0,
+        'total_count': products.length,
       });
 
-      for (final product in products) {
-        final value = values[product.id]!;
-        final beforeInitialized = product.stockInitialized;
-        final before = beforeInitialized ? product.totalAmount : 0;
-        final after = value.bottles * product.packageSize + value.extraMl;
-        final difference = beforeInitialized ? after - before : 0;
+      for (var i = 0; i < products.length; i++) {
+        final product = _productFromMap(products[i]);
+        await txn.insert('stocktake_draft_lines', {
+          'draft_id': draftId,
+          'product_id': product.id,
+          'product_name': product.name,
+          'category_name': product.categoryName,
+          'package_size': product.packageSize,
+          'stock_unit': product.stockUnit.dbValue,
+          'before_total': product.stockInitialized ? product.totalAmount : 0,
+          'before_initialized': product.stockInitialized ? 1 : 0,
+          'sort_order': i,
+        });
+      }
+      await _setLastStocktakeEmployee(txn, clean);
+    });
+
+    return _readDraft(db, draftId);
+  }
+
+  Future<StocktakeDraft> resumeStocktakeDraft(int draftId) async {
+    final db = await _database.database;
+    await db.update(
+      'stocktake_drafts',
+      {'status': 'in_progress', 'updated_at': DateTime.now().toIso8601String()},
+      where: 'id = ?',
+      whereArgs: [draftId],
+    );
+    return _readDraft(db, draftId);
+  }
+
+  Future<void> pauseStocktakeDraft(int draftId, int activeSeconds) async {
+    final db = await _database.database;
+    await db.update(
+      'stocktake_drafts',
+      {
+        'status': 'draft',
+        'active_seconds': activeSeconds < 0 ? 0 : activeSeconds,
+        'updated_at': DateTime.now().toIso8601String(),
+      },
+      where: 'id = ?',
+      whereArgs: [draftId],
+    );
+  }
+
+  Future<void> saveStocktakeActiveSeconds(int draftId, int activeSeconds) async {
+    final db = await _database.database;
+    await db.update(
+      'stocktake_drafts',
+      {
+        'active_seconds': activeSeconds < 0 ? 0 : activeSeconds,
+        'updated_at': DateTime.now().toIso8601String(),
+      },
+      where: 'id = ?',
+      whereArgs: [draftId],
+    );
+  }
+
+  Future<void> saveStocktakeDraftLine({
+    required int draftId,
+    required int productId,
+    required int? wholePackages,
+    required int? extraAmount,
+  }) async {
+    final db = await _database.database;
+    final rows = await db.query(
+      'stocktake_draft_lines',
+      columns: ['package_size', 'stock_unit'],
+      where: 'draft_id = ? AND product_id = ?',
+      whereArgs: [draftId, productId],
+      limit: 1,
+    );
+    if (rows.isEmpty) throw StateError('Позиция не входит в этот переучёт');
+
+    final packageSize = rows.first['package_size'] as int;
+    final unit = StockUnitX.fromDb(rows.first['stock_unit'] as String?);
+    if (wholePackages != null && wholePackages < 0) throw ArgumentError('Количество не может быть отрицательным');
+    if (unit != StockUnit.piece && extraAmount != null && (extraAmount < 0 || extraAmount >= packageSize)) {
+      throw ArgumentError('Некорректный дополнительный остаток');
+    }
+
+    await db.transaction((txn) async {
+      await txn.update(
+        'stocktake_draft_lines',
+        {
+          'whole_packages': wholePackages,
+          'extra_amount': unit == StockUnit.piece ? null : extraAmount,
+        },
+        where: 'draft_id = ? AND product_id = ?',
+        whereArgs: [draftId, productId],
+      );
+      await txn.update(
+        'stocktake_drafts',
+        {
+          'last_product_id': productId,
+          'updated_at': DateTime.now().toIso8601String(),
+        },
+        where: 'id = ?',
+        whereArgs: [draftId],
+      );
+    });
+  }
+
+  Future<void> deleteStocktakeDraft(int draftId) async {
+    final db = await _database.database;
+    await db.delete('stocktake_drafts', where: 'id = ?', whereArgs: [draftId]);
+  }
+
+  Future<int> completeStocktakeDraft(int draftId, int activeSeconds) async {
+    final db = await _database.database;
+    late int operationId;
+
+    await db.transaction((txn) async {
+      final draftRows = await txn.query('stocktake_drafts', where: 'id = ?', whereArgs: [draftId], limit: 1);
+      if (draftRows.isEmpty) throw StateError('Черновик переучёта не найден');
+      final draftRow = draftRows.first;
+      final lineRows = await txn.query('stocktake_draft_lines', where: 'draft_id = ?', whereArgs: [draftId], orderBy: 'sort_order');
+      final lines = lineRows.map(_savedLineFromMap).toList(growable: false);
+      if (lines.isEmpty || lines.length != (draftRow['total_count'] as int) || lines.any((line) => !line.isFilled)) {
+        throw StateError('Переучёт нельзя завершить: заполнены не все позиции');
+      }
+
+      final employee = draftRow['employee_name'] as String;
+      final startedAt = DateTime.parse(draftRow['started_at'] as String);
+      final completedAt = DateTime.now();
+      final safeActiveSeconds = activeSeconds < 0 ? 0 : activeSeconds;
+      final totalSeconds = completedAt.difference(startedAt).inSeconds.clamp(0, 1 << 31).toInt();
+
+      operationId = await txn.insert('operations', {
+        'type': 'stocktake',
+        'created_at': completedAt.toIso8601String(),
+        'employee_name': employee,
+        'started_at': startedAt.toIso8601String(),
+        'completed_at': completedAt.toIso8601String(),
+        'active_seconds': safeActiveSeconds,
+        'total_seconds': totalSeconds,
+      });
+
+      for (final line in lines) {
+        final currentRows = await txn.rawQuery('''
+          SELECT p.*, c.name AS category_name
+          FROM products p
+          JOIN categories c ON c.id = p.category_id
+          WHERE p.id = ?
+          LIMIT 1
+        ''', [line.productId]);
+        if (currentRows.isEmpty) throw StateError('Позиция ${line.productName} больше не существует');
+        final current = _productFromMap(currentRows.first);
+
+        final whole = line.wholePackages!;
+        final extra = line.stockUnit == StockUnit.piece ? 0 : line.extraAmount!;
+        _validateQuantity(whole, extra, line.packageSize, line.stockUnit, line.productName);
+        final actual = line.stockUnit == StockUnit.piece ? whole : whole * line.packageSize + extra;
+        final beforeInitialized = current.stockInitialized;
+        final before = beforeInitialized ? current.totalAmount : 0;
+        final difference = beforeInitialized ? actual - before : 0;
 
         await txn.update(
           'products',
           {
-            'whole_bottles': product.stockUnit == StockUnit.piece ? after : value.bottles,
-            'extra_ml': product.stockUnit == StockUnit.piece ? 0 : value.extraMl,
+            'bottle_ml': line.stockUnit == StockUnit.piece ? 1 : line.packageSize,
+            'whole_bottles': line.stockUnit == StockUnit.piece ? actual : whole,
+            'extra_ml': line.stockUnit == StockUnit.piece ? 0 : extra,
+            'stock_unit': line.stockUnit.dbValue,
             'stock_initialized': 1,
           },
           where: 'id = ?',
-          whereArgs: [product.id],
+          whereArgs: [line.productId],
         );
         await txn.insert('operation_lines', {
           'operation_id': operationId,
-          'product_id': product.id,
-          'product_name': product.name,
-          'category_name': product.categoryName,
-          'bottle_ml': product.packageSize,
-          'stock_unit': product.stockUnit.dbValue,
+          'product_id': line.productId,
+          'product_name': line.productName,
+          'category_name': line.categoryName,
+          'bottle_ml': line.stockUnit == StockUnit.piece ? 1 : line.packageSize,
+          'stock_unit': line.stockUnit.dbValue,
           'before_total_ml': before,
           'before_initialized': beforeInitialized ? 1 : 0,
           'change_total_ml': difference,
-          'after_total_ml': after,
+          'after_total_ml': actual,
         });
       }
+
+      await txn.delete('stocktake_drafts', where: 'id = ?', whereArgs: [draftId]);
     });
+
+    return operationId;
   }
 
   Future<List<StockOperation>> getOperations() async {
@@ -231,6 +437,11 @@ class WarehouseRepository {
         id: id,
         type: operation['type'] == 'delivery' ? StockOperationType.delivery : StockOperationType.stocktake,
         createdAt: DateTime.parse(operation['created_at'] as String),
+        employeeName: operation['employee_name'] as String?,
+        startedAt: operation['started_at'] == null ? null : DateTime.parse(operation['started_at'] as String),
+        completedAt: operation['completed_at'] == null ? null : DateTime.parse(operation['completed_at'] as String),
+        activeSeconds: (operation['active_seconds'] as int?) ?? 0,
+        totalSeconds: (operation['total_seconds'] as int?) ?? 0,
         lines: lineRows
             .map((row) => StockOperationLine(
                   productId: row['product_id'] as int,
@@ -248,6 +459,39 @@ class WarehouseRepository {
     }
     return result;
   }
+
+  Future<StocktakeDraft> _readDraft(DatabaseExecutor db, int draftId) async {
+    final rows = await db.query('stocktake_drafts', where: 'id = ?', whereArgs: [draftId], limit: 1);
+    if (rows.isEmpty) throw StateError('Черновик переучёта не найден');
+    final row = rows.first;
+    final lineRows = await db.query('stocktake_draft_lines', where: 'draft_id = ?', whereArgs: [draftId], orderBy: 'sort_order');
+    final lines = lineRows.map(_savedLineFromMap).toList(growable: false);
+    return StocktakeDraft(
+      id: draftId,
+      employeeName: row['employee_name'] as String,
+      status: StocktakeDraftStatusX.fromDb(row['status'] as String?),
+      startedAt: DateTime.parse(row['started_at'] as String),
+      updatedAt: DateTime.parse(row['updated_at'] as String),
+      activeSeconds: row['active_seconds'] as int,
+      lastProductId: row['last_product_id'] as int?,
+      totalCount: row['total_count'] as int,
+      filledCount: lines.where((line) => line.isFilled).length,
+      lines: lines,
+    );
+  }
+
+  SavedStocktakeLine _savedLineFromMap(Map<String, Object?> row) => SavedStocktakeLine(
+        productId: row['product_id'] as int,
+        productName: row['product_name'] as String,
+        categoryName: row['category_name'] as String,
+        packageSize: row['package_size'] as int,
+        stockUnit: StockUnitX.fromDb(row['stock_unit'] as String?),
+        beforeTotal: row['before_total'] as int,
+        beforeInitialized: (row['before_initialized'] as int? ?? 1) == 1,
+        sortOrder: row['sort_order'] as int,
+        wholePackages: row['whole_packages'] as int?,
+        extraAmount: row['extra_amount'] as int?,
+      );
 
   void _validateProductFields(String name, int packageSize, int minimumAmount, StockUnit unit) {
     if (name.isEmpty) throw ArgumentError('Название позиции обязательно');
