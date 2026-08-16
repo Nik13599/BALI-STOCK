@@ -6,6 +6,7 @@ import 'data/remote_stock_service.dart';
 import 'data/remote_sync_repository.dart';
 import 'data/repository.dart';
 import 'models.dart';
+import 'security.dart';
 
 class WarehouseController extends ChangeNotifier {
   WarehouseController({
@@ -92,9 +93,21 @@ class WarehouseController extends ChangeNotifier {
 
   void clearOperationSessionPin() {
     _sessionPin = null;
+    clearRememberedOperationPin();
+  }
+
+  Future<void> _ensureCatalogEditSession() async {
+    _sessionPin ??= lastVerifiedOperationPin;
+    if (_sessionPin == null) {
+      throw StateError('Для редактирования склада необходимо заново ввести пароль.');
+    }
+    if (!_sharedOnline) {
+      throw StateError('Редактирование каталога требует связи с общей базой.');
+    }
   }
 
   Future<int> addCategory(String name) async {
+    await _ensureCatalogEditSession();
     final id = await _repository.addCategory(name);
     categories = await _repository.getCategories();
     notifyListeners();
@@ -111,9 +124,7 @@ class WarehouseController extends ChangeNotifier {
     required int minimumAmount,
     required StockUnit stockUnit,
   }) async {
-    if (!_sharedOnline && _sessionPin != null) {
-      throw StateError('Нельзя добавлять новую позицию без связи с общей базой.');
-    }
+    await _ensureCatalogEditSession();
     await _repository.addProduct(
       name: name,
       categoryId: categoryId,
@@ -135,9 +146,7 @@ class WarehouseController extends ChangeNotifier {
     required int minimumAmount,
     required StockUnit stockUnit,
   }) async {
-    if (!_sharedOnline && _sessionPin != null) {
-      throw StateError('Нельзя редактировать каталог без связи с общей базой.');
-    }
+    await _ensureCatalogEditSession();
     await _repository.updateProduct(
       productId: productId,
       name: name,
@@ -234,7 +243,12 @@ class WarehouseController extends ChangeNotifier {
     return operations.isEmpty ? 0 : operations.first.id;
   }
 
-  Future<void> onAppResumed() => _pullRemote(silent: true);
+  Future<void> onAppResumed() async {
+    await _pullRemote(silent: true);
+    if (_sharedOnline && _sessionPin != null) {
+      await _syncAllDraftsBestEffort();
+    }
+  }
 
   Future<void> _loadLocal() async {
     final values = await Future.wait([
