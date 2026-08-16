@@ -24,6 +24,7 @@ class Product {
     required this.wholeBottles,
     required this.extraMl,
     required this.minimumMl,
+    required this.stockInitialized,
     required this.active,
   });
 
@@ -35,13 +36,14 @@ class Product {
   final int wholeBottles;
   final int extraMl;
   final int minimumMl;
+  final bool stockInitialized;
   final bool active;
 
   int get totalMl => wholeBottles * bottleMl + extraMl;
-  bool get isEmpty => totalMl == 0;
-  bool get isLow => totalMl <= minimumMl;
+  bool get isEmpty => stockInitialized && totalMl == 0;
+  bool get isLow => stockInitialized && totalMl <= minimumMl;
 
-  Product copyWith({int? wholeBottles, int? extraMl}) => Product(
+  Product copyWith({int? wholeBottles, int? extraMl, bool? stockInitialized}) => Product(
         id: id,
         name: name,
         categoryId: categoryId,
@@ -50,6 +52,7 @@ class Product {
         wholeBottles: wholeBottles ?? this.wholeBottles,
         extraMl: extraMl ?? this.extraMl,
         minimumMl: minimumMl,
+        stockInitialized: stockInitialized ?? this.stockInitialized,
         active: active,
       );
 }
