@@ -43,9 +43,8 @@ class WarehouseRepository {
     required int minimumMl,
   }) async {
     final clean = name.trim();
-    if (clean.isEmpty) throw ArgumentError('Название позиции обязательно');
-    if (bottleMl <= 0) throw ArgumentError('Объём бутылки должен быть больше нуля');
-    if (wholeBottles < 0 || extraMl < 0 || minimumMl < 0) {
+    _validateProductFields(clean, bottleMl, minimumMl);
+    if (wholeBottles < 0 || extraMl < 0) {
       throw ArgumentError('Количество не может быть отрицательным');
     }
     if (extraMl >= bottleMl) {
@@ -60,9 +59,45 @@ class WarehouseRepository {
       'whole_bottles': wholeBottles,
       'extra_ml': extraMl,
       'minimum_ml': minimumMl,
+      'stock_initialized': 1,
       'active': 1,
       'created_at': DateTime.now().toIso8601String(),
     });
+  }
+
+  Future<void> updateProduct({
+    required int productId,
+    required String name,
+    required int categoryId,
+    required int bottleMl,
+    required int minimumMl,
+  }) async {
+    final clean = name.trim();
+    _validateProductFields(clean, bottleMl, minimumMl);
+
+    final db = await _database.database;
+    final rows = await db.query('products', where: 'id = ? AND active = 1', whereArgs: [productId], limit: 1);
+    if (rows.isEmpty) throw StateError('Позиция больше не активна');
+
+    final oldBottleMl = rows.first['bottle_ml'] as int;
+    final initialized = (rows.first['stock_initialized'] as int? ?? 1) == 1;
+    final wholeBottles = rows.first['whole_bottles'] as int;
+    final extraMl = rows.first['extra_ml'] as int;
+    if (initialized && oldBottleMl != bottleMl && (wholeBottles > 0 || extraMl > 0)) {
+      throw StateError('Нельзя менять объём бутылки у позиции с остатком. Сначала проведите переучёт с нулевым остатком.');
+    }
+
+    await db.update(
+      'products',
+      {
+        'name': clean,
+        'category_id': categoryId,
+        'bottle_ml': bottleMl,
+        'minimum_ml': minimumMl,
+      },
+      where: 'id = ?',
+      whereArgs: [productId],
+    );
   }
 
   Future<void> receiveDelivery(List<DeliveryDraftLine> lines) async {
@@ -87,6 +122,10 @@ class WarehouseRepository {
         ''', [line.product.id]);
         if (rows.isEmpty) throw StateError('Позиция ${line.product.name} больше не активна');
         final current = _productFromMap(rows.first);
+        if (!current.stockInitialized) {
+          throw StateError('Сначала проведите первичный переучёт. Остаток ${current.name} ещё не введён.');
+        }
+
         final before = current.totalMl;
         final added = line.bottles * current.bottleMl + line.extraMl;
         final after = before + added;
@@ -144,13 +183,17 @@ class WarehouseRepository {
 
       for (final product in products) {
         final value = values[product.id]!;
-        final before = product.totalMl;
+        final before = product.stockInitialized ? product.totalMl : 0;
         final after = value.bottles * product.bottleMl + value.extraMl;
         final difference = after - before;
 
         await txn.update(
           'products',
-          {'whole_bottles': value.bottles, 'extra_ml': value.extraMl},
+          {
+            'whole_bottles': value.bottles,
+            'extra_ml': value.extraMl,
+            'stock_initialized': 1,
+          },
           where: 'id = ?',
           whereArgs: [product.id],
         );
@@ -201,6 +244,12 @@ class WarehouseRepository {
     return result;
   }
 
+  void _validateProductFields(String name, int bottleMl, int minimumMl) {
+    if (name.isEmpty) throw ArgumentError('Название позиции обязательно');
+    if (bottleMl <= 0) throw ArgumentError('Объём бутылки должен быть больше нуля');
+    if (minimumMl < 0) throw ArgumentError('Минимальный остаток не может быть отрицательным');
+  }
+
   Product _productFromMap(Map<String, Object?> row) => Product(
         id: row['id'] as int,
         name: row['name'] as String,
@@ -210,6 +259,7 @@ class WarehouseRepository {
         wholeBottles: row['whole_bottles'] as int,
         extraMl: row['extra_ml'] as int,
         minimumMl: row['minimum_ml'] as int,
+        stockInitialized: (row['stock_initialized'] as int? ?? 1) == 1,
         active: (row['active'] as int) == 1,
       );
 }
