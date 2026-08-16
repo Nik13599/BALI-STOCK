@@ -2,6 +2,16 @@ enum StockOperationType { delivery, stocktake }
 
 enum StockUnit { ml, gram, piece }
 
+enum StocktakeDraftStatus { draft, inProgress }
+
+extension StocktakeDraftStatusX on StocktakeDraftStatus {
+  String get dbValue => this == StocktakeDraftStatus.inProgress ? 'in_progress' : 'draft';
+  String get displayName => this == StocktakeDraftStatus.inProgress ? 'В процессе' : 'Черновик';
+
+  static StocktakeDraftStatus fromDb(String? value) =>
+      value == 'in_progress' ? StocktakeDraftStatus.inProgress : StocktakeDraftStatus.draft;
+}
+
 extension StockUnitX on StockUnit {
   String get dbValue => switch (this) {
         StockUnit.ml => 'ml',
@@ -68,7 +78,7 @@ class Product {
   final int categoryId;
   final String categoryName;
 
-  /// Legacy storage names kept for backwards-compatible SQLite migrations.
+  /// Legacy SQLite column names are retained for backwards-compatible migrations.
   /// For non-liquid goods these values mean package size / whole packages /
   /// loose remainder / minimum amount in the product's [stockUnit].
   final int bottleMl;
@@ -110,12 +120,22 @@ class StockOperation {
     required this.type,
     required this.createdAt,
     required this.lines,
+    this.employeeName,
+    this.startedAt,
+    this.completedAt,
+    this.activeSeconds = 0,
+    this.totalSeconds = 0,
   });
 
   final int id;
   final StockOperationType type;
   final DateTime createdAt;
   final List<StockOperationLine> lines;
+  final String? employeeName;
+  final DateTime? startedAt;
+  final DateTime? completedAt;
+  final int activeSeconds;
+  final int totalSeconds;
 }
 
 class StockOperationLine {
@@ -161,6 +181,66 @@ class StocktakeDraftLine {
 
   final int bottles;
   final int extraMl;
+}
+
+class SavedStocktakeLine {
+  const SavedStocktakeLine({
+    required this.productId,
+    required this.productName,
+    required this.categoryName,
+    required this.packageSize,
+    required this.stockUnit,
+    required this.beforeTotal,
+    required this.beforeInitialized,
+    required this.sortOrder,
+    this.wholePackages,
+    this.extraAmount,
+  });
+
+  final int productId;
+  final String productName;
+  final String categoryName;
+  final int packageSize;
+  final StockUnit stockUnit;
+  final int beforeTotal;
+  final bool beforeInitialized;
+  final int sortOrder;
+  final int? wholePackages;
+  final int? extraAmount;
+
+  bool get isFilled {
+    if (wholePackages == null || wholePackages! < 0) return false;
+    if (stockUnit == StockUnit.piece) return true;
+    return extraAmount != null && extraAmount! >= 0 && extraAmount! < packageSize;
+  }
+}
+
+class StocktakeDraft {
+  const StocktakeDraft({
+    required this.id,
+    required this.employeeName,
+    required this.status,
+    required this.startedAt,
+    required this.updatedAt,
+    required this.activeSeconds,
+    required this.totalCount,
+    required this.filledCount,
+    required this.lines,
+    this.lastProductId,
+  });
+
+  final int id;
+  final String employeeName;
+  final StocktakeDraftStatus status;
+  final DateTime startedAt;
+  final DateTime updatedAt;
+  final int activeSeconds;
+  final int totalCount;
+  final int filledCount;
+  final int? lastProductId;
+  final List<SavedStocktakeLine> lines;
+
+  bool get isComplete => totalCount > 0 && filledCount == totalCount;
 }
 
 String formatBottleVolume(int ml) {
@@ -214,4 +294,14 @@ String formatMinimumAmount(int amount, StockUnit unit) => '$amount ${unit.symbol
 String formatDateTime(DateTime value) {
   String two(int n) => n.toString().padLeft(2, '0');
   return '${two(value.day)}.${two(value.month)}.${value.year} ${two(value.hour)}:${two(value.minute)}';
+}
+
+String formatDurationSeconds(int seconds) {
+  final safe = seconds < 0 ? 0 : seconds;
+  final hours = safe ~/ 3600;
+  final minutes = (safe % 3600) ~/ 60;
+  final secs = safe % 60;
+  if (hours > 0) return '$hours ч ${minutes.toString().padLeft(2, '0')} мин';
+  if (minutes > 0) return '$minutes мин';
+  return '$secs сек';
 }
