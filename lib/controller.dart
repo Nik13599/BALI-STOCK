@@ -66,6 +66,23 @@ class WarehouseController extends ChangeNotifier {
     await _reloadAfterMutation();
   }
 
+  Future<void> updateProduct({
+    required int productId,
+    required String name,
+    required int categoryId,
+    required int bottleMl,
+    required int minimumMl,
+  }) async {
+    await _repository.updateProduct(
+      productId: productId,
+      name: name,
+      categoryId: categoryId,
+      bottleMl: bottleMl,
+      minimumMl: minimumMl,
+    );
+    await _reloadAfterMutation();
+  }
+
   Future<void> receiveDelivery(List<DeliveryDraftLine> lines) async {
     await _repository.receiveDelivery(lines);
     await _reloadAfterMutation();
