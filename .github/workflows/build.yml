@@ -31,7 +31,9 @@ jobs:
           channel: stable
           cache: true
       - run: flutter create . --project-name bali_stock --org com.bali.stock --platforms=android,ios,windows
+      - run: dart run tool/materialize_branding.dart
       - run: flutter pub get
+      - run: dart run flutter_launcher_icons
       - run: flutter build apk --release
       - uses: actions/upload-artifact@v4
         with:
@@ -48,7 +50,9 @@ jobs:
           cache: true
       - run: flutter config --enable-windows-desktop
       - run: flutter create . --project-name bali_stock --org com.bali.stock --platforms=windows,android,ios
+      - run: dart run tool/materialize_branding.dart
       - run: flutter pub get
+      - run: dart run flutter_launcher_icons
       - run: flutter build windows --release
       - uses: actions/upload-artifact@v4
         with:
@@ -64,7 +68,9 @@ jobs:
           channel: stable
           cache: true
       - run: flutter create . --project-name bali_stock --org com.bali.stock --platforms=android,ios,windows
+      - run: dart run tool/materialize_branding.dart
       - run: flutter pub get
+      - run: dart run flutter_launcher_icons
       - run: flutter build ios --release --no-codesign
       - uses: actions/upload-artifact@v4
         with:
