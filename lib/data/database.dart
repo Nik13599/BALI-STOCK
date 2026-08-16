@@ -27,7 +27,7 @@ class BaliStockDatabase {
     return factory.openDatabase(
       p.join(dbPath, 'bali_stock.db'),
       options: OpenDatabaseOptions(
-        version: 3,
+        version: 4,
         onConfigure: (db) async {
           await db.execute('PRAGMA foreign_keys = ON');
         },
@@ -48,6 +48,7 @@ class BaliStockDatabase {
               whole_bottles INTEGER NOT NULL DEFAULT 0 CHECK (whole_bottles >= 0),
               extra_ml INTEGER NOT NULL DEFAULT 0 CHECK (extra_ml >= 0),
               minimum_ml INTEGER NOT NULL DEFAULT 0 CHECK (minimum_ml >= 0),
+              stock_unit TEXT NOT NULL DEFAULT 'ml',
               stock_initialized INTEGER NOT NULL DEFAULT 1,
               active INTEGER NOT NULL DEFAULT 1,
               created_at TEXT NOT NULL,
@@ -61,11 +62,16 @@ class BaliStockDatabase {
         onUpgrade: (db, oldVersion, newVersion) async {
           if (oldVersion < 2) {
             await db.execute('ALTER TABLE products ADD COLUMN stock_initialized INTEGER NOT NULL DEFAULT 1');
-            await _seedCatalog(db);
           }
           if (oldVersion < 3) {
             await db.execute('ALTER TABLE operation_lines ADD COLUMN before_initialized INTEGER NOT NULL DEFAULT 1');
           }
+          if (oldVersion < 4) {
+            await db.execute("ALTER TABLE products ADD COLUMN stock_unit TEXT NOT NULL DEFAULT 'ml'");
+            await db.execute("ALTER TABLE operation_lines ADD COLUMN stock_unit TEXT NOT NULL DEFAULT 'ml'");
+            await _normalizeLegacyNames(db);
+          }
+          await _seedCatalog(db);
         },
       ),
     );
@@ -87,6 +93,7 @@ class BaliStockDatabase {
         product_name TEXT NOT NULL,
         category_name TEXT NOT NULL,
         bottle_ml INTEGER NOT NULL,
+        stock_unit TEXT NOT NULL DEFAULT 'ml',
         before_total_ml INTEGER NOT NULL,
         before_initialized INTEGER NOT NULL DEFAULT 1,
         change_total_ml INTEGER NOT NULL,
@@ -101,6 +108,40 @@ class BaliStockDatabase {
     await db.execute('CREATE INDEX idx_operations_created_at ON operations(created_at DESC)');
   }
 
+  static Future<void> _normalizeLegacyNames(Database db) async {
+    const aliases = <String, String>{
+      'Johnnie Walker RED Label': 'Johnnie Walker Red Label',
+      'Johnnie Walker BLACK Label': 'Johnnie Walker Black Label',
+      'Johnnie Walker BLUE Label': 'Johnnie Walker Blue Label',
+      'Casillero De Diablo Sauv. Blanc сухое': 'Casillero De Diablo Sauvignon Blanc сухое',
+      'Cin Zano Asti': 'Cinzano Asti',
+      'Luc Belaire розовое сухое': 'Luc Belaire Rosé',
+      'Luc Belaire белое брют': 'Luc Belaire Brut',
+      'Veuve Clicquot Brut белое брют': 'Veuve Clicquot Brut',
+      'Moet & Chandon Brut белое брют': 'Moët & Chandon Brut',
+      'Moet & Chandon Brut розовое брют': 'Moët & Chandon Rosé',
+      'Bottega Gold Prosecco белое брют': 'Bottega Gold Prosecco',
+      'Bottega Rose Gold Pinot Nero розовое брют': 'Bottega Rose Gold Pinot Nero',
+      'Mumm белое брют': 'Mumm Brut',
+      'Dom Perignon Brut': 'Dom Pérignon Brut',
+      'Кока-Кола': 'Coca-Cola',
+      'Швепс': 'Schweppes',
+      'Спрайт': 'Sprite',
+      'Кока-Кола Zero': 'Coca-Cola Zero',
+      'Боровая газ': 'Боровая газированная',
+      'Боровая негаз': 'Боровая негазированная',
+      'Tassay газ': 'Tassay газированная',
+      'Tassay негаз': 'Tassay негазированная',
+    };
+
+    for (final entry in aliases.entries) {
+      final target = await db.query('products', columns: ['id'], where: 'name = ? COLLATE NOCASE', whereArgs: [entry.value], limit: 1);
+      if (target.isEmpty) {
+        await db.update('products', {'name': entry.value}, where: 'name = ? COLLATE NOCASE', whereArgs: [entry.key]);
+      }
+    }
+  }
+
   static Future<void> _seedCatalog(Database db) async {
     final categoryIds = <String, int>{};
     for (var i = 0; i < seedCategories.length; i++) {
@@ -109,6 +150,7 @@ class BaliStockDatabase {
       final int id;
       if (existing.isNotEmpty) {
         id = existing.first['id'] as int;
+        await db.update('categories', {'sort_order': i}, where: 'id = ?', whereArgs: [id]);
       } else {
         id = await db.insert('categories', {'name': name, 'sort_order': i});
       }
@@ -119,20 +161,32 @@ class BaliStockDatabase {
     for (final product in seedProducts) {
       final categoryId = categoryIds[product.category]!;
       final existing = await db.rawQuery('''
-        SELECT p.id
+        SELECT p.id, p.stock_initialized
         FROM products p
         WHERE p.name = ? COLLATE NOCASE
         LIMIT 1
       ''', [product.name]);
-      if (existing.isNotEmpty) continue;
+
+      if (existing.isNotEmpty) {
+        final id = existing.first['id'] as int;
+        final initialized = (existing.first['stock_initialized'] as int? ?? 1) == 1;
+        final values = <String, Object?>{
+          'category_id': categoryId,
+          'stock_unit': product.unit,
+        };
+        if (!initialized) values['bottle_ml'] = product.packageSize;
+        await db.update('products', values, where: 'id = ?', whereArgs: [id]);
+        continue;
+      }
 
       await db.insert('products', {
         'name': product.name,
         'category_id': categoryId,
-        'bottle_ml': product.bottleMl,
+        'bottle_ml': product.packageSize,
         'whole_bottles': 0,
         'extra_ml': 0,
         'minimum_ml': 0,
+        'stock_unit': product.unit,
         'stock_initialized': 0,
         'active': 1,
         'created_at': now,
