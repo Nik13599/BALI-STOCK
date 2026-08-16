@@ -27,7 +27,7 @@ class BaliStockDatabase {
     return factory.openDatabase(
       p.join(dbPath, 'bali_stock.db'),
       options: OpenDatabaseOptions(
-        version: 2,
+        version: 3,
         onConfigure: (db) async {
           await db.execute('PRAGMA foreign_keys = ON');
         },
@@ -63,6 +63,9 @@ class BaliStockDatabase {
             await db.execute('ALTER TABLE products ADD COLUMN stock_initialized INTEGER NOT NULL DEFAULT 1');
             await _seedCatalog(db);
           }
+          if (oldVersion < 3) {
+            await db.execute('ALTER TABLE operation_lines ADD COLUMN before_initialized INTEGER NOT NULL DEFAULT 1');
+          }
         },
       ),
     );
@@ -85,6 +88,7 @@ class BaliStockDatabase {
         category_name TEXT NOT NULL,
         bottle_ml INTEGER NOT NULL,
         before_total_ml INTEGER NOT NULL,
+        before_initialized INTEGER NOT NULL DEFAULT 1,
         change_total_ml INTEGER NOT NULL,
         after_total_ml INTEGER NOT NULL,
         FOREIGN KEY(operation_id) REFERENCES operations(id) ON DELETE CASCADE
