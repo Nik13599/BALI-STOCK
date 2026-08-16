@@ -1,13 +1,11 @@
 name: Build BALI STOCK
 
 on:
-  push:
-    branches: ["agent/bali-stock-mvp"]
   pull_request:
     branches: ["main"]
 
 concurrency:
-  group: bali-stock-${{ github.workflow }}-${{ github.ref }}
+  group: bali-stock-${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
