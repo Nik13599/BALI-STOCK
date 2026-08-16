@@ -210,7 +210,7 @@ Future<void> showAddProductDialog(BuildContext context, WarehouseController cont
                       children: [
                         Expanded(
                           child: DropdownButtonFormField<int>(
-                            value: categoryId,
+                            initialValue: categoryId,
                             isExpanded: true,
                             decoration: const InputDecoration(labelText: 'Категория'),
                             items: controller.categories.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))).toList(growable: false),
