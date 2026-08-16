@@ -31,6 +31,17 @@ jobs:
           channel: stable
           cache: true
       - run: flutter create . --project-name bali_stock --org com.bali.stock --platforms=android,ios,windows
+      - name: Ensure Android release internet permission
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('android/app/src/main/AndroidManifest.xml')
+          text = p.read_text(encoding='utf-8')
+          permission = '<uses-permission android:name="android.permission.INTERNET" />'
+          if 'android.permission.INTERNET' not in text:
+              text = text.replace('<manifest xmlns:android="http://schemas.android.com/apk/res/android">', '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n    ' + permission)
+              p.write_text(text, encoding='utf-8')
+          PY
       - run: flutter pub get
       - run: dart run flutter_launcher_icons
       - run: flutter build apk --release
