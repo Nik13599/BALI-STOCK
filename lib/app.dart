@@ -90,9 +90,11 @@ class _BaliStockShellState extends State<BaliStockShell> with WidgetsBindingObse
         showErrorSnack(context, e);
         return;
       }
-    } else {
-      widget.controller.clearOperationSessionPin();
     }
+    // Do not clear the in-memory PIN merely because the user navigated away.
+    // StocktakeScreen.dispose() may still be flushing the local draft status
+    // to the shared backend. Every new protected entry prompts for PIN anyway,
+    // and the value never leaves process memory or gets written to history.
     if (mounted) setState(() => _selectedIndex = index);
   }
 
