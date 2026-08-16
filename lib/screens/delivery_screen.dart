@@ -42,67 +42,77 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: widget.controller,
-      builder: (context, _) => Scaffold(
-        appBar: AppBar(title: const Text('Принять поставку')),
-        body: widget.controller.products.isEmpty
-            ? const EmptyState(icon: Icons.local_shipping_outlined, title: 'Нет складских позиций', message: 'Сначала добавьте позиции в разделе «Склад».')
-            : ListView(
-                padding: const EdgeInsets.all(20),
-                children: [
-                  const InfoBanner(
-                    icon: Icons.lock_outline,
-                    text: 'Доступ к приёмке подтверждается паролем. После проведения поставки количество автоматически прибавляется к текущему складу.',
-                  ),
-                  const SizedBox(height: 20),
-                  Row(
-                    children: [
-                      Expanded(child: Text('Позиции поставки', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800))),
-                      FilledButton.icon(onPressed: _saving ? null : _addLine, icon: const Icon(Icons.add), label: const Text('Добавить позицию')),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  if (_lines.isEmpty)
-                    Container(
-                      padding: const EdgeInsets.all(22),
-                      decoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainer, borderRadius: BorderRadius.circular(18)),
-                      child: const Text('Добавьте товары, которые фактически пришли в этой поставке.', textAlign: TextAlign.center),
+      builder: (context, _) {
+        final products = widget.controller.products;
+        final notInitialized = products.where((p) => !p.stockInitialized).length;
+        return Scaffold(
+          appBar: AppBar(title: const Text('Принять поставку')),
+          body: products.isEmpty
+              ? const EmptyState(icon: Icons.local_shipping_outlined, title: 'Нет складских позиций', message: 'Сначала добавьте позиции в разделе «Склад».')
+              : notInitialized > 0
+                  ? EmptyState(
+                      icon: Icons.fact_check_outlined,
+                      title: 'Сначала проведите первичный переучёт',
+                      message: 'У $notInitialized позиций ещё не введён фактический остаток. Поставка станет доступна после полного первичного пересчёта всего склада.',
                     )
-                  else
-                    Card(
-                      child: Column(
-                        children: [
-                          for (var i = 0; i < _lines.values.length; i++) ...[
-                            Builder(
-                              builder: (context) {
-                                final line = _lines.values.elementAt(i);
-                                return ListTile(
-                                  contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-                                  title: Text(line.product.name, style: const TextStyle(fontWeight: FontWeight.w700)),
-                                  subtitle: Text('${line.product.categoryName} • бутылка ${formatBottleVolume(line.product.bottleMl)}'),
-                                  trailing: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text('+${line.bottles} бут. + ${line.extraMl} мл', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
-                                      IconButton(onPressed: _saving ? null : () => setState(() => _lines.remove(line.product.id)), icon: const Icon(Icons.delete_outline)),
-                                    ],
-                                  ),
-                                );
-                              },
-                            ),
-                            if (i != _lines.length - 1) const Divider(height: 1),
+                  : ListView(
+                      padding: const EdgeInsets.all(20),
+                      children: [
+                        const InfoBanner(
+                          icon: Icons.lock_outline,
+                          text: 'Доступ к приёмке подтверждается паролем. После проведения поставки количество автоматически прибавляется к текущему складу.',
+                        ),
+                        const SizedBox(height: 20),
+                        Row(
+                          children: [
+                            Expanded(child: Text('Позиции поставки', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800))),
+                            FilledButton.icon(onPressed: _saving ? null : _addLine, icon: const Icon(Icons.add), label: const Text('Добавить позицию')),
                           ],
-                        ],
-                      ),
+                        ),
+                        const SizedBox(height: 12),
+                        if (_lines.isEmpty)
+                          Container(
+                            padding: const EdgeInsets.all(22),
+                            decoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainer, borderRadius: BorderRadius.circular(18)),
+                            child: const Text('Добавьте товары, которые фактически пришли в этой поставке.', textAlign: TextAlign.center),
+                          )
+                        else
+                          Card(
+                            child: Column(
+                              children: [
+                                for (var i = 0; i < _lines.values.length; i++) ...[
+                                  Builder(
+                                    builder: (context) {
+                                      final line = _lines.values.elementAt(i);
+                                      return ListTile(
+                                        contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+                                        title: Text(line.product.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+                                        subtitle: Text('${line.product.categoryName} • бутылка ${formatBottleVolume(line.product.bottleMl)}'),
+                                        trailing: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text('+${line.bottles} бут. + ${line.extraMl} мл', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+                                            IconButton(onPressed: _saving ? null : () => setState(() => _lines.remove(line.product.id)), icon: const Icon(Icons.delete_outline)),
+                                          ],
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                  if (i != _lines.length - 1) const Divider(height: 1),
+                                ],
+                              ],
+                            ),
+                          ),
+                        const SizedBox(height: 24),
+                        FilledButton.icon(
+                          onPressed: _lines.isEmpty || _saving ? null : _submit,
+                          icon: _saving ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.check_circle_outline),
+                          label: const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Text('ПРОВЕСТИ ПОСТАВКУ')),
+                        ),
+                      ],
                     ),
-                  const SizedBox(height: 24),
-                  FilledButton.icon(
-                    onPressed: _lines.isEmpty || _saving ? null : _submit,
-                    icon: _saving ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.check_circle_outline),
-                    label: const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Text('ПРОВЕСТИ ПОСТАВКУ')),
-                  ),
-                ],
-              ),
-      ),
+        );
+      },
     );
   }
 }
