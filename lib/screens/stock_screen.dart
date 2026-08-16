@@ -66,20 +66,6 @@ class _StockScreenState extends State<StockScreen> {
         action: FilledButton.icon(onPressed: controller.refresh, icon: const Icon(Icons.refresh), label: const Text('Повторить')),
       );
     }
-    if (controller.products.isEmpty) {
-      return EmptyState(
-        icon: Icons.inventory_2_outlined,
-        title: 'Склад пока пуст',
-        message: _editMode ? 'Добавьте первую складскую позицию.' : 'Для добавления позиций включите режим редактирования.',
-        action: _editMode
-            ? FilledButton.icon(
-                onPressed: () => showAddProductDialog(context, controller),
-                icon: const Icon(Icons.add),
-                label: const Text('Добавить первую позицию'),
-              )
-            : null,
-      );
-    }
 
     final low = controller.products.where((p) => p.isLow).length;
     final notCounted = controller.products.where((p) => !p.stockInitialized).length;
@@ -174,14 +160,15 @@ class _ProductTile extends StatelessWidget {
     final unknown = !product.stockInitialized;
     final amountText = unknown
         ? 'Остаток не введён — заполнится при первом переучёте'
-        : '${product.wholeBottles} бут. × ${formatBottleVolume(product.bottleMl)} + ${product.extraMl} мл';
+        : formatStockParts(product.totalAmount, product.packageSize, product.stockUnit);
+    final sizeText = product.stockUnit == StockUnit.piece ? 'штучный учёт' : formatPackageSize(product.packageSize, product.stockUnit);
 
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       title: Row(
         children: [
           Expanded(child: Text(product.name, style: const TextStyle(fontWeight: FontWeight.w700))),
-          Text(formatBottleVolume(product.bottleMl), style: Theme.of(context).textTheme.bodySmall),
+          Text(sizeText, style: Theme.of(context).textTheme.bodySmall),
         ],
       ),
       subtitle: Padding(
@@ -198,7 +185,9 @@ class _ProductTile extends StatelessWidget {
             ),
             const SizedBox(height: 3),
             Text(
-              unknown ? 'Минимальный остаток: ${product.minimumMl} мл' : 'Всего ${formatLiters(product.totalMl)} • минимум ${product.minimumMl} мл',
+              unknown
+                  ? 'Минимальный остаток: ${formatMinimumAmount(product.minimumAmount, product.stockUnit)}'
+                  : 'Всего ${formatTotalAmount(product.totalAmount, product.stockUnit)} • минимум ${formatMinimumAmount(product.minimumAmount, product.stockUnit)}',
               style: TextStyle(color: danger ? colors.error : null),
             ),
           ],
@@ -212,11 +201,12 @@ class _ProductTile extends StatelessWidget {
 Future<void> showAddProductDialog(BuildContext context, WarehouseController controller) async {
   final key = GlobalKey<FormState>();
   final name = TextEditingController();
-  final bottles = TextEditingController(text: '0');
-  final bottleMl = TextEditingController(text: '500');
+  final whole = TextEditingController(text: '0');
+  final packageSize = TextEditingController(text: '500');
   final extra = TextEditingController(text: '0');
   final minimum = TextEditingController(text: '0');
   int? categoryId = controller.categories.isNotEmpty ? controller.categories.first.id : null;
+  var stockUnit = StockUnit.ml;
   var saving = false;
 
   await showDialog<void>(
@@ -242,10 +232,11 @@ Future<void> showAddProductDialog(BuildContext context, WarehouseController cont
             await controller.addProduct(
               name: name.text,
               categoryId: categoryId!,
-              bottleMl: int.parse(bottleMl.text),
-              wholeBottles: int.parse(bottles.text),
-              extraMl: int.parse(extra.text),
-              minimumMl: int.parse(minimum.text),
+              packageSize: stockUnit == StockUnit.piece ? 1 : int.parse(packageSize.text),
+              wholePackages: int.parse(whole.text),
+              extraAmount: stockUnit == StockUnit.piece ? 0 : int.parse(extra.text),
+              minimumAmount: int.parse(minimum.text),
+              stockUnit: stockUnit,
             );
             if (dialogContext.mounted) Navigator.of(dialogContext).pop();
           } catch (e) {
@@ -254,10 +245,18 @@ Future<void> showAddProductDialog(BuildContext context, WarehouseController cont
           }
         }
 
+        final wholeLabel = switch (stockUnit) {
+          StockUnit.ml => 'Количество бутылок',
+          StockUnit.gram => 'Количество упаковок',
+          StockUnit.piece => 'Количество, шт.',
+        };
+        final sizeLabel = stockUnit == StockUnit.ml ? 'Мл в одной бутылке' : 'Грамм в одной упаковке';
+        final extraLabel = stockUnit == StockUnit.ml ? 'Доп. остаток, мл' : 'Доп. остаток, г';
+
         return AlertDialog(
           title: const Text('Добавить позицию'),
           content: SizedBox(
-            width: 560,
+            width: 600,
             child: Form(
               key: key,
               child: SingleChildScrollView(
@@ -284,31 +283,57 @@ Future<void> showAddProductDialog(BuildContext context, WarehouseController cont
                       ],
                     ),
                     const SizedBox(height: 12),
-                    TwoFields(
-                      first: IntegerField(controller: bottles, label: 'Количество бутылок', min: 0),
-                      second: IntegerField(controller: bottleMl, label: 'Мл в одной бутылке', min: 1),
+                    DropdownButtonFormField<StockUnit>(
+                      initialValue: stockUnit,
+                      isExpanded: true,
+                      decoration: const InputDecoration(labelText: 'Тип учёта'),
+                      items: StockUnit.values.map((u) => DropdownMenuItem(value: u, child: Text(u.displayName))).toList(growable: false),
+                      onChanged: saving
+                          ? null
+                          : (value) {
+                              if (value == null) return;
+                              setState(() {
+                                stockUnit = value;
+                                packageSize.text = value == StockUnit.ml ? '500' : (value == StockUnit.gram ? '1000' : '1');
+                                extra.text = '0';
+                              });
+                            },
                     ),
                     const SizedBox(height: 12),
-                    TwoFields(
-                      first: IntegerField(
-                        controller: extra,
-                        label: 'Доп. остаток, мл',
-                        min: 0,
-                        validator: (value) {
-                          final base = integerValidator(value, min: 0);
-                          if (base != null) return base;
-                          final bottle = int.tryParse(bottleMl.text);
-                          final residue = int.tryParse(value ?? '');
-                          if (bottle != null && residue != null && residue >= bottle) return 'Должен быть меньше объёма бутылки';
-                          return null;
-                        },
+                    if (stockUnit == StockUnit.piece)
+                      TwoFields(
+                        first: IntegerField(controller: whole, label: wholeLabel, min: 0),
+                        second: IntegerField(controller: minimum, label: 'Минимальный остаток, шт.', min: 0),
+                      )
+                    else ...[
+                      TwoFields(
+                        first: IntegerField(controller: whole, label: wholeLabel, min: 0),
+                        second: IntegerField(controller: packageSize, label: sizeLabel, min: 1),
                       ),
-                      second: IntegerField(controller: minimum, label: 'Минимальный остаток, мл', min: 0),
-                    ),
+                      const SizedBox(height: 12),
+                      TwoFields(
+                        first: IntegerField(
+                          controller: extra,
+                          label: extraLabel,
+                          min: 0,
+                          validator: (value) {
+                            final base = integerValidator(value, min: 0);
+                            if (base != null) return base;
+                            final size = int.tryParse(packageSize.text);
+                            final residue = int.tryParse(value ?? '');
+                            if (size != null && residue != null && residue >= size) return 'Должен быть меньше размера упаковки';
+                            return null;
+                          },
+                        ),
+                        second: IntegerField(controller: minimum, label: 'Минимальный остаток, ${stockUnit.symbol}', min: 0),
+                      ),
+                    ],
                     const SizedBox(height: 10),
-                    const Align(
+                    Align(
                       alignment: Alignment.centerLeft,
-                      child: Text('Если дополнительного остатка нет — укажите 0. Минимальный остаток может быть меньше одной бутылки.'),
+                      child: Text(stockUnit == StockUnit.piece
+                          ? 'Для штучного товара указывается только количество штук. Дополнительный объём не нужен.'
+                          : 'Если дополнительного остатка нет — укажите 0. Минимальный остаток может быть меньше одной тары/упаковки.'),
                     ),
                   ],
                 ),
@@ -329,8 +354,8 @@ Future<void> showAddProductDialog(BuildContext context, WarehouseController cont
   );
 
   name.dispose();
-  bottles.dispose();
-  bottleMl.dispose();
+  whole.dispose();
+  packageSize.dispose();
   extra.dispose();
   minimum.dispose();
 }
@@ -338,9 +363,10 @@ Future<void> showAddProductDialog(BuildContext context, WarehouseController cont
 Future<void> showEditProductDialog(BuildContext context, WarehouseController controller, Product product) async {
   final key = GlobalKey<FormState>();
   final name = TextEditingController(text: product.name);
-  final bottleMl = TextEditingController(text: '${product.bottleMl}');
-  final minimum = TextEditingController(text: '${product.minimumMl}');
+  final packageSize = TextEditingController(text: '${product.packageSize}');
+  final minimum = TextEditingController(text: '${product.minimumAmount}');
   var categoryId = product.categoryId;
+  var stockUnit = product.stockUnit;
   var saving = false;
 
   await showDialog<void>(
@@ -356,8 +382,9 @@ Future<void> showEditProductDialog(BuildContext context, WarehouseController con
               productId: product.id,
               name: name.text,
               categoryId: categoryId,
-              bottleMl: int.parse(bottleMl.text),
-              minimumMl: int.parse(minimum.text),
+              packageSize: stockUnit == StockUnit.piece ? 1 : int.parse(packageSize.text),
+              minimumAmount: int.parse(minimum.text),
+              stockUnit: stockUnit,
             );
             if (dialogContext.mounted) Navigator.of(dialogContext).pop();
           } catch (e) {
@@ -369,34 +396,53 @@ Future<void> showEditProductDialog(BuildContext context, WarehouseController con
         return AlertDialog(
           title: Text('Редактировать: ${product.name}'),
           content: SizedBox(
-            width: 540,
+            width: 560,
             child: Form(
               key: key,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextFormField(controller: name, decoration: const InputDecoration(labelText: 'Название позиции'), validator: requiredText),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<int>(
-                    initialValue: categoryId,
-                    isExpanded: true,
-                    decoration: const InputDecoration(labelText: 'Категория'),
-                    items: controller.categories.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))).toList(growable: false),
-                    onChanged: saving ? null : (value) {
-                      if (value != null) setState(() => categoryId = value);
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  TwoFields(
-                    first: IntegerField(controller: bottleMl, label: 'Мл в одной бутылке', min: 1),
-                    second: IntegerField(controller: minimum, label: 'Минимальный остаток, мл', min: 0),
-                  ),
-                  const SizedBox(height: 10),
-                  const Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text('Текущий фактический остаток здесь изменить нельзя. Он меняется только поставкой или переучётом.'),
-                  ),
-                ],
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextFormField(controller: name, decoration: const InputDecoration(labelText: 'Название позиции'), validator: requiredText),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<int>(
+                      initialValue: categoryId,
+                      isExpanded: true,
+                      decoration: const InputDecoration(labelText: 'Категория'),
+                      items: controller.categories.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))).toList(growable: false),
+                      onChanged: saving ? null : (value) {
+                        if (value != null) setState(() => categoryId = value);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<StockUnit>(
+                      initialValue: stockUnit,
+                      isExpanded: true,
+                      decoration: const InputDecoration(labelText: 'Тип учёта'),
+                      items: StockUnit.values.map((u) => DropdownMenuItem(value: u, child: Text(u.displayName))).toList(growable: false),
+                      onChanged: saving ? null : (value) {
+                        if (value != null) setState(() => stockUnit = value);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    if (stockUnit == StockUnit.piece)
+                      IntegerField(controller: minimum, label: 'Минимальный остаток, шт.', min: 0)
+                    else
+                      TwoFields(
+                        first: IntegerField(
+                          controller: packageSize,
+                          label: stockUnit == StockUnit.ml ? 'Мл в одной бутылке' : 'Грамм в одной упаковке',
+                          min: 1,
+                        ),
+                        second: IntegerField(controller: minimum, label: 'Минимальный остаток, ${stockUnit.symbol}', min: 0),
+                      ),
+                    const SizedBox(height: 10),
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text('Текущий фактический остаток здесь изменить нельзя. Он меняется только поставкой или переучётом.'),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -414,6 +460,6 @@ Future<void> showEditProductDialog(BuildContext context, WarehouseController con
   );
 
   name.dispose();
-  bottleMl.dispose();
+  packageSize.dispose();
   minimum.dispose();
 }
