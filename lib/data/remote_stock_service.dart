@@ -39,6 +39,8 @@ class RemoteStockService {
               'stock_unit': product.stockUnit.dbValue,
               'minimum_amount': product.minimumAmount,
               'active': product.active,
+              'initialized': product.stockInitialized,
+              'quantity_base': product.stockInitialized ? product.totalAmount : null,
             })
         .toList(growable: false);
     return _post(pin, {'action': 'bootstrap', 'items': items});
