@@ -145,6 +145,7 @@ class WarehouseRepository {
           'category_name': current.categoryName,
           'bottle_ml': current.bottleMl,
           'before_total_ml': before,
+          'before_initialized': 1,
           'change_total_ml': added,
           'after_total_ml': after,
         });
@@ -183,9 +184,10 @@ class WarehouseRepository {
 
       for (final product in products) {
         final value = values[product.id]!;
-        final before = product.stockInitialized ? product.totalMl : 0;
+        final beforeInitialized = product.stockInitialized;
+        final before = beforeInitialized ? product.totalMl : 0;
         final after = value.bottles * product.bottleMl + value.extraMl;
-        final difference = after - before;
+        final difference = beforeInitialized ? after - before : 0;
 
         await txn.update(
           'products',
@@ -204,6 +206,7 @@ class WarehouseRepository {
           'category_name': product.categoryName,
           'bottle_ml': product.bottleMl,
           'before_total_ml': before,
+          'before_initialized': beforeInitialized ? 1 : 0,
           'change_total_ml': difference,
           'after_total_ml': after,
         });
@@ -235,6 +238,7 @@ class WarehouseRepository {
                   categoryName: row['category_name'] as String,
                   bottleMl: row['bottle_ml'] as int,
                   beforeTotalMl: row['before_total_ml'] as int,
+                  beforeInitialized: (row['before_initialized'] as int? ?? 1) == 1,
                   changeTotalMl: row['change_total_ml'] as int,
                   afterTotalMl: row['after_total_ml'] as int,
                 ))
