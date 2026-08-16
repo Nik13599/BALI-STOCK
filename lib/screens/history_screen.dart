@@ -39,7 +39,7 @@ class HistoryScreen extends StatelessWidget {
     return ListView.separated(
       padding: const EdgeInsets.all(20),
       itemCount: controller.operations.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 10),
+      separatorBuilder: (context, index) => const SizedBox(height: 10),
       itemBuilder: (context, index) {
         final operation = controller.operations[index];
         final delivery = operation.type == StockOperationType.delivery;
