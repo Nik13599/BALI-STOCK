@@ -8,6 +8,7 @@ import 'screens/history_screen.dart';
 import 'screens/stock_screen.dart';
 import 'screens/stocktake_screen.dart';
 import 'widgets/common.dart';
+import 'widgets/pin_value_dialog.dart';
 
 class BaliStockApp extends StatelessWidget {
   const BaliStockApp({super.key, required this.controller});
@@ -48,7 +49,7 @@ class BaliStockShell extends StatefulWidget {
   State<BaliStockShell> createState() => _BaliStockShellState();
 }
 
-class _BaliStockShellState extends State<BaliStockShell> {
+class _BaliStockShellState extends State<BaliStockShell> with WidgetsBindingObserver {
   int _selectedIndex = 0;
 
   static const _mobileDestinations = <NavigationDestination>[
@@ -58,13 +59,41 @@ class _BaliStockShellState extends State<BaliStockShell> {
     NavigationDestination(icon: Icon(Icons.history), selectedIcon: Icon(Icons.history_toggle_off), label: 'История'),
   ];
 
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      widget.controller.onAppResumed();
+    }
+  }
+
   Future<void> _select(int index) async {
     if (index == _selectedIndex) return;
     if (index == 1 || index == 2) {
-      final allowed = await showOperationPinDialog(context);
-      if (!mounted || !allowed) return;
+      final pin = await showOperationPinValueDialog(context);
+      if (!mounted || pin == null) return;
+      try {
+        await widget.controller.setOperationSessionPin(pin);
+      } catch (e) {
+        if (!mounted) return;
+        showErrorSnack(context, e);
+        return;
+      }
+    } else {
+      widget.controller.clearOperationSessionPin();
     }
-    setState(() => _selectedIndex = index);
+    if (mounted) setState(() => _selectedIndex = index);
   }
 
   Widget _page() {
@@ -74,7 +103,10 @@ class _BaliStockShellState extends State<BaliStockShell> {
       case 2:
         return StocktakeScreen(
           controller: widget.controller,
-          onCompleted: () => setState(() => _selectedIndex = 0),
+          onCompleted: () {
+            widget.controller.clearOperationSessionPin();
+            setState(() => _selectedIndex = 0);
+          },
         );
       case 3:
         return HistoryScreen(controller: widget.controller);
