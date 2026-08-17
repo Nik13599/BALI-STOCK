@@ -1,0 +1,4 @@
+BALI STOCK iPhone V8 Web Clip endpoint:
+https://mvnxfouyoynqyjdpcblh.supabase.co/functions/v1/bali-stock-ios
+
+V8 no longer uses htmlpreview.github.io.
