@@ -1,0 +1,118 @@
+name: Deploy BALI STOCK iPhone V12 Fixed
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ios-web/**"
+      - "assets/branding/bali_stock_logo.png"
+      - ".github/workflows/pages-v12-fixed.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages-v12-fixed"
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Build fixed iPhone PWA
+        shell: bash
+        run: |
+          mkdir -p _site
+          cp ios-web/v2.html _site/index.html
+          cp ios-web/v12-offline.js _site/v12-offline.js
+          cp ios-web/sw.js _site/sw.js
+          cp ios-web/manifest.webmanifest _site/manifest.webmanifest
+          cp assets/branding/bali_stock_logo.png _site/bali_stock_logo.png
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path('_site/index.html')
+          html = p.read_text(encoding='utf-8')
+          js = Path('ios-web/v12-offline.js').read_text(encoding='utf-8')
+
+          html = html.replace(
+              r'/(?<![.,\d])(\d{1,4})(?![.,\d])/g',
+              r'/(?:^|[^.,\d])(\d{1,4})(?![.,\d])/g'
+          )
+
+          html, fixed_count = re.subn(
+              r'return,([A-Za-z_$][A-Za-z0-9_$]*)=',
+              r'return;let \1=',
+              html,
+          )
+          if fixed_count < 1:
+              raise SystemExit('Expected invalid legacy return-comma syntax not found')
+          print(f'Fixed legacy syntax occurrences: {fixed_count}')
+
+          head = (
+              '<link rel="manifest" href="./manifest.webmanifest">\n'
+              '<link rel="apple-touch-icon" href="./bali_stock_logo.png">\n'
+              '<meta name="mobile-web-app-capable" content="yes">\n'
+              '<meta name="apple-mobile-web-app-capable" content="yes">\n'
+              '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">'
+          )
+          html = html.replace('</head>', head + '\n</head>', 1)
+
+          scanner = '<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>'
+          html = html.replace('<script>\nconst API=', scanner + '\n<script>\nconst API=', 1)
+
+          marker = "(async()=>{try{await snapshot();"
+          if marker not in html:
+              raise SystemExit('Startup marker not found')
+          html = html.replace(marker, js + '\n' + marker, 1)
+          p.write_text(html, encoding='utf-8')
+          PY
+          touch _site/.nojekyll
+      - name: Validate generated JavaScript syntax
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import subprocess
+
+          html = Path('_site/index.html').read_text(encoding='utf-8')
+          scripts = re.findall(r'<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>', html, flags=re.I|re.S)
+          if not scripts:
+              raise SystemExit('No inline JavaScript found')
+          for i, script in enumerate(scripts):
+              f = Path(f'/tmp/bali-inline-{i}.js')
+              f.write_text(script, encoding='utf-8')
+              subprocess.run(['node', '--check', str(f)], check=True)
+          print(f'JavaScript syntax OK: {len(scripts)} inline block(s)')
+          PY
+      - name: Validate PWA payload
+        run: |
+          grep -q "BALI STOCK" _site/index.html
+          grep -q "V12_SYNC_API" _site/index.html
+          grep -q "Html5Qrcode" _site/index.html
+          grep -q "manifest.webmanifest" _site/index.html
+          test -s _site/sw.js
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
