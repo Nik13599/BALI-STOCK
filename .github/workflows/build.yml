@@ -66,6 +66,39 @@ jobs:
       - run: flutter pub get
       - run: dart run flutter_launcher_icons
       - run: flutter build windows --release
+      - name: Bundle Microsoft VC++ runtime for standalone launch
+        shell: pwsh
+        run: |
+          $release = Resolve-Path 'build/windows/x64/runner/Release'
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path $vswhere)) {
+            throw "vswhere.exe not found"
+          }
+          $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $vs) {
+            throw "Visual Studio C++ tools not found"
+          }
+          $redistRoot = Join-Path $vs 'VC\Redist\MSVC'
+          $crt = Get-ChildItem $redistRoot -Directory | Sort-Object Name -Descending | ForEach-Object {
+            $candidate = Join-Path $_.FullName 'x64\Microsoft.VC143.CRT'
+            if (Test-Path $candidate) { $candidate }
+          } | Select-Object -First 1
+          if (-not $crt) {
+            throw "Microsoft.VC143.CRT x64 redistributable directory not found"
+          }
+          Copy-Item (Join-Path $crt '*.dll') -Destination $release -Force
+          $required = @('msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')
+          foreach ($dll in $required) {
+            if (-not (Test-Path (Join-Path $release $dll))) {
+              throw "Required VC runtime DLL missing after copy: $dll"
+            }
+          }
+          Set-Content -Path (Join-Path $release 'BALI-STOCK-START.txt') -Encoding UTF8 -Value @"
+          BALI STOCK
+          1. Распакуйте ВЕСЬ архив в отдельную папку.
+          2. Запускайте bali_stock.exe из этой папки.
+          3. Не переносите отдельно только EXE — рядом нужны DLL и папка data.
+          "@
       - uses: actions/upload-artifact@v4
         with:
           name: BALI-STOCK-Windows
