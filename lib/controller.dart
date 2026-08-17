@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' hide Category;
 
@@ -348,6 +349,22 @@ class WarehouseController extends ChangeNotifier {
     return '${response['id'] ?? ''}';
   }
 
+  Future<String> uploadInvoiceAttachment({
+    required Uint8List bytes,
+    required String fileName,
+    required String mimeType,
+  }) async {
+    final pin = _requireSessionPin();
+    _ensureOnline('Загрузка накладной');
+    return _remote.uploadInvoiceAttachment(pin: pin, bytes: bytes, fileName: fileName, mimeType: mimeType);
+  }
+
+  Future<String> invoiceAttachmentUrl(String path) async {
+    final pin = _requireSessionPin();
+    _ensureOnline('Открытие накладной');
+    return _remote.createInvoiceAttachmentUrl(pin: pin, path: path);
+  }
+
   Future<String> saveInvoiceScan({
     required String employee,
     String? supplierId,
@@ -367,6 +384,25 @@ class WarehouseController extends ChangeNotifier {
       rawText: rawText,
       lines: lines,
     );
+  }
+
+  Future<String> createPurchaseRequest({
+    required String employee,
+    required List<PurchaseSuggestion> items,
+    String? supplierId,
+    String? comment,
+  }) async {
+    final pin = _requireSessionPin();
+    _ensureOnline('Создание заявки на закупку');
+    final response = await _remote.createPurchaseRequest(
+      pin: pin,
+      employee: employee,
+      items: items,
+      supplierId: supplierId,
+      comment: comment,
+    );
+    await _applyResponseSnapshot(response);
+    return '${response['id'] ?? ''}';
   }
 
   List<StockSupplier> suppliersFor(Product product) {
@@ -454,7 +490,13 @@ class WarehouseController extends ChangeNotifier {
     }
   }
 
-  Future<int> completeStocktakeDraft(int draftId, int activeSeconds) async {
+  Future<int> completeStocktakeDraft(
+    int draftId,
+    int activeSeconds, {
+    required Map<int, String> comments,
+    required Set<int> recheckedProductIds,
+    required List<List<double>> signaturePoints,
+  }) async {
     final pin = _requireSessionPin();
     if (!_sharedOnline) {
       throw StateError('Переучёт сохранён как черновик, но провести его без интернета нельзя. Подключитесь к сети и нажмите «Завершить переучёт» ещё раз.');
@@ -462,7 +504,14 @@ class WarehouseController extends ChangeNotifier {
     _draftSyncTimers.remove(draftId)?.cancel();
     final draft = await _syncRepository.readDraft(draftId);
     if (!draft.isComplete) throw StateError('Переучёт нельзя завершить: заполнены не все позиции');
-    final response = await _remote.completeStocktake(pin: pin, draft: draft, activeSeconds: activeSeconds);
+    final response = await _remote.completeStocktake(
+      pin: pin,
+      draft: draft,
+      activeSeconds: activeSeconds,
+      comments: comments,
+      recheckedProductIds: recheckedProductIds,
+      signaturePoints: signaturePoints,
+    );
     await _repository.deleteStocktakeDraft(draftId);
     await _applyResponseSnapshot(response);
     return operations.isEmpty ? 0 : operations.first.id;
