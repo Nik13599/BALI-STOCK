@@ -118,6 +118,52 @@ class _BaliStockShellState extends State<BaliStockShell> with WidgetsBindingObse
     }
   }
 
+  Widget _pageWithSyncStatus() {
+    return AnimatedBuilder(
+      animation: widget.controller,
+      builder: (context, _) {
+        final warning = widget.controller.syncWarning?.trim();
+        final online = widget.controller.sharedOnline;
+        final hasWarning = warning != null && warning.isNotEmpty;
+        final text = hasWarning
+            ? warning
+            : online
+                ? 'Синхронизировано с общей базой'
+                : 'Офлайн — склад доступен локально';
+        final color = hasWarning || !online ? const Color(0xFFFFCB5C) : const Color(0xFF39FF6A);
+        final icon = hasWarning || !online ? Icons.cloud_off_outlined : Icons.cloud_done_outlined;
+
+        return Column(
+          children: [
+            SafeArea(
+              bottom: false,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                color: const Color(0xFF111713),
+                child: Row(
+                  children: [
+                    Icon(icon, size: 16, color: color),
+                    const SizedBox(width: 7),
+                    Expanded(
+                      child: Text(
+                        text,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Expanded(child: _page()),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -147,14 +193,14 @@ class _BaliStockShellState extends State<BaliStockShell> with WidgetsBindingObse
                   ),
                 ),
                 const VerticalDivider(width: 1),
-                Expanded(child: _page()),
+                Expanded(child: _pageWithSyncStatus()),
               ],
             ),
           );
         }
 
         return Scaffold(
-          body: _page(),
+          body: _pageWithSyncStatus(),
           bottomNavigationBar: NavigationBar(
             selectedIndex: _selectedIndex,
             onDestinationSelected: _select,

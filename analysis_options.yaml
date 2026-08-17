@@ -3,6 +3,8 @@ include: package:flutter_lints/flutter.yaml
 analyzer:
   errors:
     unnecessary_import: ignore
+    unnecessary_non_null_assertion: ignore
+    use_super_parameters: ignore
 
 linter:
   rules:

@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
 
 import 'app.dart';
-import 'controller.dart';
+import 'persistent_offline_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final controller = WarehouseController();
+  final controller = PersistentOfflineWarehouseController();
 
   // Show the application shell immediately. If local database or startup
   // synchronization fails, replace the spinner with a readable error screen
-  // instead of letting the Windows process exit silently.
+  // instead of letting the process exit silently.
   runApp(BaliStockApp(controller: controller));
 
   try {
