@@ -34,15 +34,24 @@ jobs:
           channel: stable
           cache: true
       - run: flutter create . --project-name bali_stock --org com.bali.stock --platforms=android,ios,windows
-      - name: Ensure Android release internet permission
+      - name: Ensure Android release internet and camera permissions
         run: |
           python - <<'PY'
           from pathlib import Path
           p = Path('android/app/src/main/AndroidManifest.xml')
           text = p.read_text(encoding='utf-8')
-          permission = '<uses-permission android:name="android.permission.INTERNET" />'
-          if 'android.permission.INTERNET' not in text:
-              text = text.replace('<manifest xmlns:android="http://schemas.android.com/apk/res/android">', '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n    ' + permission)
+          permissions = [
+              '<uses-permission android:name="android.permission.INTERNET" />',
+              '<uses-permission android:name="android.permission.CAMERA" />',
+          ]
+          marker = '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
+          additions = []
+          for permission in permissions:
+              name = permission.split('android.permission.')[1].split('"')[0]
+              if f'android.permission.{name}' not in text:
+                  additions.append('    ' + permission)
+          if additions:
+              text = text.replace(marker, marker + '\n' + '\n'.join(additions))
               p.write_text(text, encoding='utf-8')
           PY
       - run: flutter pub get
@@ -122,7 +131,7 @@ jobs:
           plist_path = Path('ios/Runner/Info.plist')
           with plist_path.open('rb') as f:
               data = plistlib.load(f)
-          data['NSCameraUsageDescription'] = 'BALI STOCK использует камеру для сканирования накладных и распознавания поставки.'
+          data['NSCameraUsageDescription'] = 'BALI STOCK использует камеру для сканирования QR-кодов, штрихкодов и накладных.'
           data['NSPhotoLibraryUsageDescription'] = 'BALI STOCK использует фото накладной для распознавания поставки.'
           with plist_path.open('wb') as f:
               plistlib.dump(data, f, fmt=plistlib.FMT_XML, sort_keys=False)
