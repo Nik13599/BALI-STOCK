@@ -4,8 +4,8 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import 'controller.dart';
 import 'screens/delivery_screen.dart';
-import 'screens/history_screen.dart';
-import 'screens/stock_screen.dart';
+import 'screens/history_overview_screen.dart';
+import 'screens/stock_overview_screen.dart';
 import 'screens/stocktake_screen.dart';
 import 'widgets/common.dart';
 import 'widgets/pin_value_dialog.dart';
@@ -91,10 +91,6 @@ class _BaliStockShellState extends State<BaliStockShell> with WidgetsBindingObse
         return;
       }
     }
-    // Do not clear the in-memory PIN merely because the user navigated away.
-    // StocktakeScreen.dispose() may still be flushing the local draft status
-    // to the shared backend. Every new protected entry prompts for PIN anyway,
-    // and the value never leaves process memory or gets written to history.
     if (mounted) setState(() => _selectedIndex = index);
   }
 
@@ -111,10 +107,10 @@ class _BaliStockShellState extends State<BaliStockShell> with WidgetsBindingObse
           },
         );
       case 3:
-        return HistoryScreen(controller: widget.controller);
+        return HistoryOverviewScreen(controller: widget.controller);
       case 0:
       default:
-        return StockScreen(controller: widget.controller);
+        return StockOverviewScreen(controller: widget.controller);
     }
   }
 
