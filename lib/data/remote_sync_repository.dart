@@ -13,6 +13,14 @@ class RemoteSyncRepository {
     if (remoteProducts.isEmpty) return;
     final remoteOperations = (snapshot['operations'] as List?)?.whereType<Map>().toList(growable: false) ?? const [];
     final remoteDrafts = (snapshot['drafts'] as List?)?.whereType<Map>().toList(growable: false) ?? const [];
+    final remoteSuppliers = (snapshot['suppliers'] as List?)?.whereType<Map>().toList(growable: false) ?? const [];
+    final remoteLocations = (snapshot['locations'] as List?)?.whereType<Map>().toList(growable: false) ?? const [];
+    final supplierNames = <String, String>{
+      for (final s in remoteSuppliers) '${s['id'] ?? ''}': '${s['name'] ?? ''}',
+    };
+    final locationNames = <String, String>{
+      for (final l in remoteLocations) '${l['id'] ?? ''}': '${l['name'] ?? ''}',
+    };
     final db = await _database.database;
 
     await db.transaction((txn) async {
@@ -27,6 +35,8 @@ class RemoteSyncRepository {
         final packageSize = _asInt(raw['package_size'], fallback: 1).clamp(1, 1 << 31);
         final unit = StockUnitX.fromDb(raw['stock_unit'] as String?);
         final minimum = _asInt(raw['minimum_amount']);
+        final target = _asInt(raw['target_amount']);
+        final varianceRecheck = _asInt(raw['variance_recheck_amount']);
         final active = raw['active'] != false;
         final remoteKey = '${raw['product_key'] ?? ''}';
 
@@ -57,6 +67,11 @@ class RemoteSyncRepository {
           'whole_bottles': whole,
           'extra_ml': extra,
           'minimum_ml': minimum,
+          'target_amount': target,
+          'barcode': _textOrNull(raw['barcode']),
+          'default_cost': _asDouble(raw['default_cost']),
+          'cost_currency': '${raw['cost_currency'] ?? 'BYN'}',
+          'variance_recheck_amount': varianceRecheck,
           'stock_unit': unit.dbValue,
           'stock_initialized': initialized ? 1 : 0,
           'active': active ? 1 : 0,
@@ -74,14 +89,28 @@ class RemoteSyncRepository {
       await txn.delete('operation_lines');
       await txn.delete('operations');
       for (final rawOperation in remoteOperations) {
+        final supplierId = _textOrNull(rawOperation['supplier_id']);
+        final sourceId = _textOrNull(rawOperation['source_location_id']);
+        final targetId = _textOrNull(rawOperation['target_location_id']);
         final localOperationId = await txn.insert('operations', {
-          'type': rawOperation['operation_type'] == 'delivery' ? 'delivery' : 'stocktake',
+          'type': StockOperationTypeX.fromDb(rawOperation['operation_type'] as String?).dbValue,
           'created_at': '${rawOperation['created_at']}',
           'employee_name': rawOperation['employee_name'],
           'started_at': rawOperation['started_at'],
           'completed_at': rawOperation['completed_at'],
           'active_seconds': _asInt(rawOperation['active_seconds']),
           'total_seconds': _asInt(rawOperation['total_seconds']),
+          'supplier_id': supplierId,
+          'supplier_name': supplierId == null ? null : supplierNames[supplierId],
+          'document_number': _textOrNull(rawOperation['document_number']),
+          'comment': _textOrNull(rawOperation['comment']),
+          'attachment_url': _textOrNull(rawOperation['attachment_url']),
+          'source_location_id': sourceId,
+          'source_location_name': sourceId == null ? null : locationNames[sourceId],
+          'target_location_id': targetId,
+          'target_location_name': targetId == null ? null : locationNames[targetId],
+          'correction_of': _textOrNull(rawOperation['correction_of']),
+          'total_value': _asDouble(rawOperation['total_value']),
         });
         final lines = (rawOperation['lines'] as List?)?.whereType<Map>() ?? const Iterable<Map>.empty();
         for (final line in lines) {
@@ -102,6 +131,11 @@ class RemoteSyncRepository {
             'before_initialized': line['before_initialized'] == true ? 1 : 0,
             'change_total_ml': _asInt(line['change_quantity']),
             'after_total_ml': _asInt(line['after_quantity']),
+            'unit_cost': _asDouble(line['unit_cost']),
+            'line_value': _asDouble(line['line_value']),
+            'comment': _textOrNull(line['comment']),
+            'source_location_id': _textOrNull(line['source_location_id']),
+            'target_location_id': _textOrNull(line['target_location_id']),
           });
         }
       }
@@ -206,5 +240,17 @@ class RemoteSyncRepository {
     if (value is int) return value;
     if (value is num) return value.toInt();
     return int.tryParse('$value') ?? fallback;
+  }
+
+  static double? _asDouble(Object? value) {
+    if (value == null) return null;
+    if (value is num) return value.toDouble();
+    return double.tryParse('$value');
+  }
+
+  static String? _textOrNull(Object? value) {
+    if (value == null) return null;
+    final text = '$value'.trim();
+    return text.isEmpty || text == 'null' ? null : text;
   }
 }
