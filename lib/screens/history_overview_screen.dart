@@ -4,7 +4,7 @@ import '../controller.dart';
 import '../models.dart';
 import '../services/pdf_export_service.dart';
 import '../widgets/common.dart';
-import 'history_screen.dart' show showOperationDetails;
+import 'history_screen.dart' show operationIcon, showOperationDetails;
 
 class HistoryOverviewScreen extends StatelessWidget {
   const HistoryOverviewScreen({super.key, required this.controller});
@@ -26,7 +26,14 @@ class HistoryOverviewScreen extends StatelessWidget {
       builder: (context, _) => Scaffold(
         appBar: AppBar(
           title: const Text('История операций'),
-          actions: [IconButton(tooltip: 'Обновить', onPressed: controller.refresh, icon: const Icon(Icons.refresh))],
+          actions: [
+            Chip(
+              avatar: Icon(controller.sharedOnline ? Icons.cloud_done : Icons.cloud_off, size: 17),
+              label: Text(controller.sharedOnline ? 'Общая база' : 'Офлайн-кэш'),
+            ),
+            const SizedBox(width: 8),
+            IconButton(tooltip: 'Обновить', onPressed: controller.refresh, icon: const Icon(Icons.refresh)),
+          ],
         ),
         body: _body(context),
       ),
@@ -42,13 +49,18 @@ class HistoryOverviewScreen extends StatelessWidget {
       return const EmptyState(
         icon: Icons.history,
         title: 'История пока пуста',
-        message: 'Здесь без пароля видны всем пользователям проведённые поставки, переучёты и незавершённые черновики.',
+        message: 'Здесь без пароля видны всем пользователям поставки, переучёты, списания, перемещения, корректировки и незавершённые черновики.',
       );
     }
 
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
+        const InfoBanner(
+          icon: Icons.verified_user_outlined,
+          text: 'Проведённые операции не удаляются и не переписываются. Если в документе допущена ошибка, создаётся отдельная корректирующая операция — исходная запись остаётся в истории.',
+        ),
+        const SizedBox(height: 18),
         if (controller.activeStocktakeDrafts.isNotEmpty) ...[
           Text('Незавершённые переучёты', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)),
           const SizedBox(height: 10),
@@ -72,6 +84,7 @@ class HistoryOverviewScreen extends StatelessWidget {
             _OperationCard(
               operation: operation,
               onPdf: () => _exportOperation(context, operation),
+              onOpen: () => showOperationDetails(context, operation, controller: controller),
             ),
             const SizedBox(height: 10),
           ],
@@ -133,17 +146,24 @@ class _DraftCard extends StatelessWidget {
 }
 
 class _OperationCard extends StatelessWidget {
-  const _OperationCard({required this.operation, required this.onPdf});
+  const _OperationCard({required this.operation, required this.onPdf, required this.onOpen});
 
   final StockOperation operation;
   final VoidCallback onPdf;
+  final VoidCallback onOpen;
 
   @override
   Widget build(BuildContext context) {
-    final delivery = operation.type == StockOperationType.delivery;
-    final subtitle = delivery
-        ? '${formatDateTime(operation.createdAt)} • ${operation.lines.length} позиций'
-        : '${operation.employeeName ?? 'Сотрудник не указан'} • ${formatDurationSeconds(operation.activeSeconds)} • ${operation.lines.length} позиций';
+    final details = <String>[
+      formatDateTime(operation.createdAt),
+      if (operation.employeeName?.isNotEmpty == true) operation.employeeName!,
+      '${operation.lines.length} поз.',
+      if (operation.supplierName?.isNotEmpty == true) operation.supplierName!,
+      if (operation.documentNumber?.isNotEmpty == true) '№ ${operation.documentNumber}',
+      if (operation.type == StockOperationType.stocktake) formatDurationSeconds(operation.activeSeconds),
+      if (operation.sourceLocationName?.isNotEmpty == true && operation.targetLocationName?.isNotEmpty == true)
+        '${operation.sourceLocationName} → ${operation.targetLocationName}',
+    ];
 
     return Card(
       child: Padding(
@@ -153,15 +173,16 @@ class _OperationCard extends StatelessWidget {
             Expanded(
               child: ListTile(
                 contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                leading: CircleAvatar(child: Icon(delivery ? Icons.local_shipping_outlined : Icons.fact_check_outlined)),
+                leading: CircleAvatar(child: Icon(operationIcon(operation.type))),
                 title: Row(
                   children: [
-                    Expanded(child: Text(delivery ? 'Поставка №${operation.id}' : 'Переучёт №${operation.id}', style: const TextStyle(fontWeight: FontWeight.w800))),
-                    if (!delivery) const Chip(label: Text('Завершён')),
+                    Expanded(child: Text('${operation.type.displayName} №${operation.id}', style: const TextStyle(fontWeight: FontWeight.w900))),
+                    if (operation.type == StockOperationType.stocktake) const Chip(label: Text('Завершён')),
+                    if (operation.type == StockOperationType.correction) const Chip(label: Text('Коррекция')),
                   ],
                 ),
-                subtitle: Text(subtitle),
-                onTap: () => showOperationDetails(context, operation),
+                subtitle: Text(details.join(' • ')),
+                onTap: onOpen,
               ),
             ),
             IconButton.filledTonal(
@@ -170,11 +191,7 @@ class _OperationCard extends StatelessWidget {
               icon: const Icon(Icons.picture_as_pdf_outlined),
             ),
             const SizedBox(width: 6),
-            IconButton(
-              tooltip: 'Открыть подробности',
-              onPressed: () => showOperationDetails(context, operation),
-              icon: const Icon(Icons.chevron_right),
-            ),
+            IconButton(tooltip: 'Открыть подробности', onPressed: onOpen, icon: const Icon(Icons.chevron_right)),
           ],
         ),
       ),
