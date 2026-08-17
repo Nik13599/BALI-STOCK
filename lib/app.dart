@@ -7,7 +7,7 @@ import 'screens/control_screen.dart';
 import 'screens/delivery_screen.dart';
 import 'screens/history_overview_screen.dart';
 import 'screens/stock_overview_screen.dart';
-import 'screens/stocktake_screen.dart';
+import 'screens/stocktake_v2_screen.dart';
 import 'widgets/common.dart';
 import 'widgets/pin_value_dialog.dart';
 
@@ -82,9 +82,6 @@ class _BaliStockShellState extends State<BaliStockShell> with WidgetsBindingObse
 
   Future<void> _select(int index) async {
     if (index == _selectedIndex) return;
-    // Entry to delivery and full stocktake is protected immediately. The
-    // Control workspace is view-only by default and asks for PIN only when a
-    // write action (writeoff, transfer, supplier edit, etc.) is requested.
     if (index == 1 || index == 2) {
       final pin = await showOperationPinValueDialog(context);
       if (!mounted || pin == null) return;
@@ -104,7 +101,7 @@ class _BaliStockShellState extends State<BaliStockShell> with WidgetsBindingObse
       case 1:
         return DeliveryScreen(controller: widget.controller);
       case 2:
-        return StocktakeScreen(
+        return StocktakeV2Screen(
           controller: widget.controller,
           onCompleted: () {
             widget.controller.clearOperationSessionPin();
