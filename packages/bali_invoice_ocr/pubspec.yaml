@@ -1,0 +1,21 @@
+name: bali_invoice_ocr
+description: Internal BALI STOCK OCR bridge for invoice recognition on Android and iOS.
+version: 0.1.0
+publish_to: "none"
+
+environment:
+  sdk: ">=3.12.0 <4.0.0"
+  flutter: ">=3.29.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.bali.stock.invoiceocr
+        pluginClass: BaliInvoiceOcrPlugin
+      ios:
+        pluginClass: BaliInvoiceOcrPlugin

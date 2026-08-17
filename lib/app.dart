@@ -3,10 +3,11 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import 'controller.dart';
+import 'screens/control_screen.dart';
 import 'screens/delivery_screen.dart';
 import 'screens/history_overview_screen.dart';
 import 'screens/stock_overview_screen.dart';
-import 'screens/stocktake_screen.dart';
+import 'screens/stocktake_v2_screen.dart';
 import 'widgets/common.dart';
 import 'widgets/pin_value_dialog.dart';
 
@@ -57,6 +58,7 @@ class _BaliStockShellState extends State<BaliStockShell> with WidgetsBindingObse
     NavigationDestination(icon: Icon(Icons.local_shipping_outlined), selectedIcon: Icon(Icons.local_shipping), label: 'Поставка'),
     NavigationDestination(icon: Icon(Icons.fact_check_outlined), selectedIcon: Icon(Icons.fact_check), label: 'Переучёт'),
     NavigationDestination(icon: Icon(Icons.history), selectedIcon: Icon(Icons.history_toggle_off), label: 'История'),
+    NavigationDestination(icon: Icon(Icons.tune_outlined), selectedIcon: Icon(Icons.tune), label: 'Контроль'),
   ];
 
   @override
@@ -99,7 +101,7 @@ class _BaliStockShellState extends State<BaliStockShell> with WidgetsBindingObse
       case 1:
         return DeliveryScreen(controller: widget.controller);
       case 2:
-        return StocktakeScreen(
+        return StocktakeV2Screen(
           controller: widget.controller,
           onCompleted: () {
             widget.controller.clearOperationSessionPin();
@@ -108,6 +110,8 @@ class _BaliStockShellState extends State<BaliStockShell> with WidgetsBindingObse
         );
       case 3:
         return HistoryOverviewScreen(controller: widget.controller);
+      case 4:
+        return ControlScreen(controller: widget.controller);
       case 0:
       default:
         return StockOverviewScreen(controller: widget.controller);
@@ -138,6 +142,7 @@ class _BaliStockShellState extends State<BaliStockShell> with WidgetsBindingObse
                       NavigationRailDestination(icon: Icon(Icons.local_shipping_outlined), selectedIcon: Icon(Icons.local_shipping), label: Text('Поставка')),
                       NavigationRailDestination(icon: Icon(Icons.fact_check_outlined), selectedIcon: Icon(Icons.fact_check), label: Text('Переучёт')),
                       NavigationRailDestination(icon: Icon(Icons.history), selectedIcon: Icon(Icons.history_toggle_off), label: Text('История')),
+                      NavigationRailDestination(icon: Icon(Icons.tune_outlined), selectedIcon: Icon(Icons.tune), label: Text('Контроль')),
                     ],
                   ),
                 ),

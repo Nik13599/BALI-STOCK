@@ -27,7 +27,7 @@ class BaliStockDatabase {
     return factory.openDatabase(
       p.join(dbPath, 'bali_stock.db'),
       options: OpenDatabaseOptions(
-        version: 5,
+        version: 6,
         onConfigure: (db) async {
           await db.execute('PRAGMA foreign_keys = ON');
         },
@@ -48,6 +48,11 @@ class BaliStockDatabase {
               whole_bottles INTEGER NOT NULL DEFAULT 0 CHECK (whole_bottles >= 0),
               extra_ml INTEGER NOT NULL DEFAULT 0 CHECK (extra_ml >= 0),
               minimum_ml INTEGER NOT NULL DEFAULT 0 CHECK (minimum_ml >= 0),
+              target_amount INTEGER NOT NULL DEFAULT 0 CHECK (target_amount >= 0),
+              barcode TEXT,
+              default_cost REAL,
+              cost_currency TEXT NOT NULL DEFAULT 'BYN',
+              variance_recheck_amount INTEGER NOT NULL DEFAULT 0 CHECK (variance_recheck_amount >= 0),
               stock_unit TEXT NOT NULL DEFAULT 'ml',
               stock_initialized INTEGER NOT NULL DEFAULT 1,
               active INTEGER NOT NULL DEFAULT 1,
@@ -80,6 +85,9 @@ class BaliStockDatabase {
             await db.execute('ALTER TABLE operations ADD COLUMN total_seconds INTEGER NOT NULL DEFAULT 0');
             await _createDraftTables(db);
           }
+          if (oldVersion < 6) {
+            await _migrateV6(db);
+          }
           await _createIndexes(db);
           await _seedCatalog(db);
         },
@@ -95,17 +103,61 @@ class BaliStockDatabase {
     );
   }
 
+  static Future<void> _migrateV6(Database db) async {
+    await db.execute('ALTER TABLE products ADD COLUMN target_amount INTEGER NOT NULL DEFAULT 0');
+    await db.execute('ALTER TABLE products ADD COLUMN barcode TEXT');
+    await db.execute('ALTER TABLE products ADD COLUMN default_cost REAL');
+    await db.execute("ALTER TABLE products ADD COLUMN cost_currency TEXT NOT NULL DEFAULT 'BYN'");
+    await db.execute('ALTER TABLE products ADD COLUMN variance_recheck_amount INTEGER NOT NULL DEFAULT 0');
+
+    // The v5 operations table had a CHECK limited to delivery/stocktake.
+    // Rebuild it so the local cache can faithfully mirror all immutable server operations.
+    await db.execute('ALTER TABLE operation_lines RENAME TO operation_lines_v5');
+    await db.execute('ALTER TABLE operations RENAME TO operations_v5');
+    await _createOperationTables(db);
+
+    await db.execute('''
+      INSERT INTO operations(
+        id,type,created_at,employee_name,started_at,completed_at,active_seconds,total_seconds
+      )
+      SELECT id,type,created_at,employee_name,started_at,completed_at,active_seconds,total_seconds
+      FROM operations_v5
+    ''');
+    await db.execute('''
+      INSERT INTO operation_lines(
+        id,operation_id,product_id,product_name,category_name,bottle_ml,stock_unit,
+        before_total_ml,before_initialized,change_total_ml,after_total_ml
+      )
+      SELECT id,operation_id,product_id,product_name,category_name,bottle_ml,stock_unit,
+        before_total_ml,before_initialized,change_total_ml,after_total_ml
+      FROM operation_lines_v5
+    ''');
+    await db.execute('DROP TABLE operation_lines_v5');
+    await db.execute('DROP TABLE operations_v5');
+  }
+
   static Future<void> _createOperationTables(Database db) async {
     await db.execute('''
       CREATE TABLE operations (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        type TEXT NOT NULL CHECK (type IN ('delivery', 'stocktake')),
+        type TEXT NOT NULL CHECK (type IN ('delivery', 'stocktake', 'writeoff', 'transfer', 'correction')),
         created_at TEXT NOT NULL,
         employee_name TEXT,
         started_at TEXT,
         completed_at TEXT,
         active_seconds INTEGER NOT NULL DEFAULT 0,
-        total_seconds INTEGER NOT NULL DEFAULT 0
+        total_seconds INTEGER NOT NULL DEFAULT 0,
+        supplier_id TEXT,
+        supplier_name TEXT,
+        document_number TEXT,
+        comment TEXT,
+        attachment_url TEXT,
+        source_location_id TEXT,
+        source_location_name TEXT,
+        target_location_id TEXT,
+        target_location_name TEXT,
+        correction_of TEXT,
+        total_value REAL
       )
     ''');
     await db.execute('''
@@ -121,6 +173,11 @@ class BaliStockDatabase {
         before_initialized INTEGER NOT NULL DEFAULT 1,
         change_total_ml INTEGER NOT NULL,
         after_total_ml INTEGER NOT NULL,
+        unit_cost REAL,
+        line_value REAL,
+        comment TEXT,
+        source_location_id TEXT,
+        target_location_id TEXT,
         FOREIGN KEY(operation_id) REFERENCES operations(id) ON DELETE CASCADE
       )
     ''');
@@ -166,6 +223,7 @@ class BaliStockDatabase {
 
   static Future<void> _createIndexes(Database db) async {
     await db.execute('CREATE INDEX IF NOT EXISTS idx_products_category ON products(category_id)');
+    await db.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode) WHERE barcode IS NOT NULL AND barcode <> ""');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_operations_created_at ON operations(created_at DESC)');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_stocktake_draft_lines_order ON stocktake_draft_lines(draft_id, sort_order)');
     await db.execute('''
@@ -253,6 +311,8 @@ class BaliStockDatabase {
         'whole_bottles': 0,
         'extra_ml': 0,
         'minimum_ml': 0,
+        'target_amount': 0,
+        'variance_recheck_amount': 0,
         'stock_unit': product.unit,
         'stock_initialized': 0,
         'active': 1,
