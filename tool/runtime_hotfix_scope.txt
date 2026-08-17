@@ -1,0 +1,1 @@
+Windows standalone CRT bundling + startup error UI; iPhone V8 uses direct Supabase Edge Function endpoint.
