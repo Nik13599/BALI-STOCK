@@ -29,6 +29,8 @@
         .cat{font-size:24px!important;font-weight:900!important;color:#39FF6A!important;letter-spacing:.6px!important;margin:26px 2px 10px!important;line-height:1.15!important;cursor:pointer!important;user-select:none;text-transform:uppercase!important;display:flex!important;align-items:center!important;justify-content:space-between!important;gap:10px!important}
         .cat::after{content:'▾';font-size:20px;color:#39FF6A;opacity:.95}
         .cat[data-collapsed="1"]::after{content:'▸'}
+        .pdf-action{background:#153923!important;border:1px solid #39FF6A!important;color:#fff!important;font-weight:900!important}
+        .pdf-operation{margin:8px 0 4px 0;width:100%;background:#153923!important;border:1px solid #39FF6A!important;color:#fff!important;font-weight:900!important}
       </style></head>`);
       html=html.replace('</body>',`<script>
         document.addEventListener('click',function(e){
@@ -42,6 +44,41 @@
             n=n.nextElementSibling;
           }
         });
+
+        window.baliPrintNode=function(title,node){
+          if(!node)return;
+          var clone=node.cloneNode(true);
+          clone.querySelectorAll('button,.bottom').forEach(function(x){x.remove()});
+          clone.querySelectorAll('details').forEach(function(x){x.setAttribute('open','open')});
+          clone.querySelectorAll('[style*="display: none"]').forEach(function(x){x.style.display=''});
+          var w=window.open('','_blank');
+          if(!w){alert('Разрешите всплывающие окна для формирования PDF.');return}
+          w.document.open();
+          w.document.write('<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>'+String(title).replace(/[<>]/g,'')+'</title><style>@page{size:A4;margin:12mm}body{font:12px -apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;color:#111;background:#fff}.brand{font-size:20px;font-weight:900;color:#159447;border-bottom:2px solid #159447;padding-bottom:8px;margin-bottom:14px}.doc-title{font-size:15px;font-weight:900;margin-bottom:14px}.card,.entry,details{border:1px solid #d8e0da;border-radius:6px;padding:8px;margin:5px 0;break-inside:avoid;background:#fff!important;color:#111!important}.cat{font-size:16px!important;font-weight:900!important;color:#159447!important;margin:16px 0 6px!important;text-transform:uppercase}.cat::after{display:none!important}.muted,.small,.sub{color:#56635b!important}.red{color:#b42318!important}.badge{border:1px solid #159447;padding:2px 6px;border-radius:10px}.progress,.toolbar,.sync{display:none!important}summary{font-weight:800;margin-bottom:8px}*{box-sizing:border-box}</style></head><body><div class="brand">BALI STOCK</div><div class="doc-title">'+String(title).replace(/[<>]/g,'')+'</div>'+clone.innerHTML+'</body></html>');
+          w.document.close();
+          setTimeout(function(){w.focus();w.print()},350);
+        };
+
+        function addStockPdf(){
+          var bar=document.querySelector('#app .toolbar');
+          if(!bar||bar.querySelector('.pdf-action'))return;
+          var b=document.createElement('button');
+          b.className='pdf-action';b.textContent='📄 PDF ОСТАТКИ';
+          b.onclick=function(){baliPrintNode('Текущие складские остатки',document.getElementById('app'))};
+          bar.insertBefore(b,bar.firstChild);
+        }
+        function addHistoryPdf(){
+          document.querySelectorAll('#app details.card').forEach(function(card){
+            if(card.querySelector('.pdf-operation'))return;
+            var summary=card.querySelector('summary');if(!summary)return;
+            var b=document.createElement('button');b.className='pdf-operation';b.textContent='📄 СОХРАНИТЬ ЭТУ ОПЕРАЦИЮ В PDF';
+            b.onclick=function(e){e.preventDefault();e.stopPropagation();baliPrintNode(summary.textContent||'Операция BALI STOCK',card)};
+            summary.insertAdjacentElement('afterend',b);
+          });
+        }
+        if(typeof rStock==='function'){var _baliRStock=rStock;rStock=function(){_baliRStock();setTimeout(addStockPdf,0)}}
+        if(typeof rHistory==='function'){var _baliRHistory=rHistory;rHistory=function(){_baliRHistory();setTimeout(addHistoryPdf,0)}}
+        setTimeout(function(){if(window.tab==='stock')addStockPdf();if(window.tab==='history')addHistoryPdf()},500);
       <\/script></body>`);
       document.open();
       document.write(html);
