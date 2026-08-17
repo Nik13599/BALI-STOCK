@@ -1,0 +1,24 @@
+name: BALI STOCK business tests
+
+on:
+  pull_request:
+    branches: ["main"]
+  push:
+    branches: ["main"]
+
+concurrency:
+  group: bali-stock-business-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter create . --project-name bali_stock --org com.bali.stock --platforms=android,ios,windows
+      - run: flutter pub get
+      - run: flutter test
