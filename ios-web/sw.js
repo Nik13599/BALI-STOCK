@@ -1,4 +1,4 @@
-const CACHE = 'bali-stock-v12-shell-1';
+const CACHE = 'bali-stock-v13-shell-1';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './bali_stock_logo.png'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(c=>c.addAll(SHELL)).then(()=>self.skipWaiting()));
