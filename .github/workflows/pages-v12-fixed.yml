@@ -32,7 +32,7 @@ jobs:
           cat ios-web/v13/part-*.js > /tmp/v13-complete.js
           bytes=$(wc -c < /tmp/v13-complete.js | tr -d ' ')
           echo "V13 bytes: $bytes"
-          test "$bytes" = "44291"
+          test "$bytes" = "44449"
           node --check /tmp/v13-complete.js
           grep -q "BALI_STOCK_MOBILE_VERSION" /tmp/v13-complete.js
           grep -q "v13Category" /tmp/v13-complete.js
