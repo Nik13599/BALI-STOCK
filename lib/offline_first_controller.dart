@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 
 import 'controller.dart';
 import 'data/offline_mutation_repository.dart';
@@ -40,6 +42,9 @@ class OfflineFirstWarehouseController extends WarehouseController {
   bool _syncing = false;
   bool _offlineOnline = false;
   int _pendingSyncCount = 0;
+
+  Map<String, dynamic>? _stagedInvoiceAttachment;
+  Map<String, dynamic>? _stagedInvoiceScan;
 
   int get pendingSyncCount => _pendingSyncCount;
   bool get hasPendingSync => _pendingSyncCount > 0;
@@ -119,6 +124,61 @@ class OfflineFirstWarehouseController extends WarehouseController {
   }
 
   @override
+  Future<String> uploadInvoiceAttachment({
+    required Uint8List bytes,
+    required String fileName,
+    required String mimeType,
+  }) async {
+    _requireLocalPin();
+    if (bytes.isEmpty) throw StateError('Файл накладной пустой.');
+    if (bytes.length > 15728640) {
+      throw StateError('Файл накладной больше 15 МБ. Уменьшите размер изображения.');
+    }
+    _stagedInvoiceAttachment = {
+      'file_name': fileName,
+      'mime_type': mimeType,
+      'data_base64': base64Encode(bytes),
+    };
+    // This marker is only local and is replaced with the private server path
+    // by bali-stock-sync-api when the outbox is delivered.
+    return 'pending://invoice/${DateTime.now().microsecondsSinceEpoch}';
+  }
+
+  @override
+  Future<String> saveInvoiceScan({
+    required String employee,
+    String? supplierId,
+    String? documentNumber,
+    String? attachmentUrl,
+    required String rawText,
+    required List<DeliveryDraftLine> lines,
+  }) async {
+    _requireLocalPin();
+    _stagedInvoiceScan = {
+      'employee': employee,
+      'supplier_id': supplierId,
+      'document_number': documentNumber,
+      'raw_text': rawText,
+      'lines': lines
+          .map((line) => {
+                'source_text': line.sourceText ?? line.product.name,
+                'product_key': SyncPayloadBuilder.productKey(
+                  name: line.product.name,
+                  unit: line.product.stockUnit,
+                  packageSize: line.product.packageSize,
+                ),
+                'recognized_quantity': line.addedMl,
+                'recognized_packages': line.bottles,
+                'unit_cost': line.unitCost,
+                'confidence': line.confidence,
+                'manually_corrected': line.manuallyCorrected,
+              })
+          .toList(growable: false),
+    };
+    return 'pending://invoice-scan/${DateTime.now().microsecondsSinceEpoch}';
+  }
+
+  @override
   Future<void> receiveDelivery(
     List<DeliveryDraftLine> lines, {
     String employee = '',
@@ -130,28 +190,50 @@ class OfflineFirstWarehouseController extends WarehouseController {
     Map<String, dynamic>? metadata,
   }) async {
     _requireLocalPin();
+    final stagedAttachment = _stagedInvoiceAttachment;
+    final stagedScan = _stagedInvoiceScan;
+    final hasBundle = stagedAttachment != null || stagedScan != null;
+
     await _offline.applyDelivery(
       lines: lines,
       employee: employee,
       supplierId: supplierId,
       documentNumber: documentNumber,
       comment: comment,
-      attachmentUrl: attachmentUrl,
+      attachmentUrl: stagedAttachment == null ? attachmentUrl : 'pending://invoice',
       locationId: locationId,
     );
-    await _offline.enqueue(
-      'delivery',
-      SyncPayloadBuilder.delivery(
-        lines: lines,
-        employee: employee,
-        supplierId: supplierId,
-        documentNumber: documentNumber,
-        comment: comment,
-        attachmentUrl: attachmentUrl,
-        locationId: locationId,
-        metadata: metadata,
-      ),
+
+    final cleanMetadata = <String, dynamic>{...?metadata};
+    cleanMetadata.remove('invoice_scan_id');
+    cleanMetadata['offline_first'] = true;
+    cleanMetadata['ocr_used'] = stagedScan != null || cleanMetadata['ocr_used'] == true;
+    cleanMetadata['invoice_archived'] = stagedAttachment != null || cleanMetadata['invoice_archived'] == true;
+
+    final deliveryPayload = SyncPayloadBuilder.delivery(
+      lines: lines,
+      employee: employee,
+      supplierId: supplierId,
+      documentNumber: documentNumber,
+      comment: comment,
+      attachmentUrl: hasBundle ? null : attachmentUrl,
+      locationId: locationId,
+      metadata: cleanMetadata,
     );
+
+    if (hasBundle) {
+      await _offline.enqueue('delivery_bundle', {
+        'action': 'delivery_bundle',
+        'delivery': deliveryPayload,
+        if (stagedAttachment != null) 'attachment': stagedAttachment,
+        if (stagedScan != null) 'scan': stagedScan,
+      });
+    } else {
+      await _offline.enqueue('delivery', deliveryPayload);
+    }
+
+    _stagedInvoiceAttachment = null;
+    _stagedInvoiceScan = null;
     await _afterLocalMutation();
   }
 
