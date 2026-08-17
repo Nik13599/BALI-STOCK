@@ -10,3 +10,5 @@
 8. Verify another device receives the new shared balance/history.
 9. Retry the same queued client action ID against `bali-stock-sync-api`: server must return duplicate without applying stock movement twice.
 10. Scan a QR/barcode on Android/iOS and verify product lookup and barcode binding.
+
+CI retry note: Linux jobs may be retried when GitHub codeload returns 429 before Flutter setup; this is infrastructure-only and occurs before project code runs.
