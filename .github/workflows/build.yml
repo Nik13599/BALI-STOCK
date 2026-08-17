@@ -80,6 +80,35 @@ jobs:
           channel: stable
           cache: true
       - run: flutter create . --project-name bali_stock --org com.bali.stock --platforms=android,ios,windows
+      - name: Configure iOS camera, photos and ML Kit target
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import plistlib
+
+          plist_path = Path('ios/Runner/Info.plist')
+          with plist_path.open('rb') as f:
+              data = plistlib.load(f)
+          data['NSCameraUsageDescription'] = 'BALI STOCK использует камеру для сканирования накладных и распознавания поставки.'
+          data['NSPhotoLibraryUsageDescription'] = 'BALI STOCK использует фото накладной для распознавания поставки.'
+          with plist_path.open('wb') as f:
+              plistlib.dump(data, f, fmt=plistlib.FMT_XML, sort_keys=False)
+
+          pbx = Path('ios/Runner.xcodeproj/project.pbxproj')
+          text = pbx.read_text(encoding='utf-8')
+          import re
+          text = re.sub(r'IPHONEOS_DEPLOYMENT_TARGET = [0-9.]+;', 'IPHONEOS_DEPLOYMENT_TARGET = 15.5;', text)
+          pbx.write_text(text, encoding='utf-8')
+
+          podfile = Path('ios/Podfile')
+          if podfile.exists():
+              p = podfile.read_text(encoding='utf-8')
+              if "platform :ios" in p:
+                  p = re.sub(r"platform :ios, '[0-9.]+'", "platform :ios, '15.5'", p)
+              else:
+                  p = "platform :ios, '15.5'\n" + p
+              podfile.write_text(p, encoding='utf-8')
+          PY
       - run: flutter pub get
       - run: dart run flutter_launcher_icons
       - run: flutter build ios --release --no-codesign
