@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 
 import 'app.dart';
-import 'offline_first_controller.dart';
+import 'persistent_offline_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final controller = OfflineFirstWarehouseController();
+  final controller = PersistentOfflineWarehouseController();
 
   // Show the application shell immediately. If local database or startup
   // synchronization fails, replace the spinner with a readable error screen
