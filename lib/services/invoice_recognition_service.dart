@@ -1,11 +1,10 @@
 import 'dart:io';
 import 'dart:math' as math;
 
-import 'package:flutter/services.dart';
+import 'package:bali_invoice_ocr/bali_invoice_ocr.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
-import 'package:platform_ocr/platform_ocr.dart';
 
 import '../models.dart';
 
@@ -24,7 +23,6 @@ class InvoiceRecognitionResult {
 class InvoiceRecognitionService {
   static const _languages = ['rus', 'eng'];
   static const _modelBase = 'https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main';
-  static const _androidTesseract = MethodChannel('tesseract_ocr');
 
   Future<InvoiceRecognitionResult> recognize({
     required String imagePath,
@@ -45,22 +43,19 @@ class InvoiceRecognitionService {
 
     if (Platform.isAndroid) {
       final dataRoot = await _ensureAndroidModels();
-      final text = await _androidTesseract.invokeMethod<String>('extractText', {
-        'imagePath': imagePath,
-        'tessData': dataRoot,
-        'language': 'rus+eng',
-        'config': {
-          'language': 'rus+eng',
-          'preserve_interword_spaces': '1',
-          'tessedit_pageseg_mode': '3',
-        },
-      });
-      return text ?? '';
+      return BaliInvoiceOcr.recognizeImage(
+        imagePath: imagePath,
+        language: 'rus+eng',
+        tessDataRoot: dataRoot,
+      );
     }
 
-    if (Platform.isWindows || Platform.isIOS || Platform.isMacOS) {
-      final ocr = PlatformOcr();
-      return ocr.recognizeText(OcrSource.file(file));
+    if (Platform.isIOS || Platform.isMacOS) {
+      return BaliInvoiceOcr.recognizeImage(imagePath: imagePath, language: 'ru-RU,en-US');
+    }
+
+    if (Platform.isWindows) {
+      return _recognizeWithWindowsMediaOcr(imagePath);
     }
 
     throw UnsupportedError('OCR накладной пока не поддерживается на этой платформе.');
@@ -80,8 +75,64 @@ class InvoiceRecognitionService {
       }
       await target.writeAsBytes(response.bodyBytes, flush: true);
     }
-    // TessBaseAPI.init expects the directory *containing* /tessdata.
     return root.path;
+  }
+
+  Future<String> _recognizeWithWindowsMediaOcr(String imagePath) async {
+    const script = r'''
+$ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+Add-Type -AssemblyName System.Runtime.WindowsRuntime
+
+function Await-WinRT($AsyncOperation, [Type]$ResultType) {
+  $asTaskMethod = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
+    $_.Name -eq 'AsTask' -and $_.IsGenericMethod -and $_.GetParameters().Count -eq 1
+  })[0]
+  $task = $asTaskMethod.MakeGenericMethod($ResultType).Invoke($null, @($AsyncOperation))
+  $task.Wait()
+  return $task.Result
+}
+
+$StorageFile = [Windows.Storage.StorageFile, Windows.Storage, ContentType=WindowsRuntime]
+$FileAccessMode = [Windows.Storage.FileAccessMode, Windows.Storage, ContentType=WindowsRuntime]
+$RandomAccessStream = [Windows.Storage.Streams.IRandomAccessStreamWithContentType, Windows.Storage.Streams, ContentType=WindowsRuntime]
+$BitmapDecoder = [Windows.Graphics.Imaging.BitmapDecoder, Windows.Graphics.Imaging, ContentType=WindowsRuntime]
+$SoftwareBitmap = [Windows.Graphics.Imaging.SoftwareBitmap, Windows.Graphics.Imaging, ContentType=WindowsRuntime]
+$OcrEngine = [Windows.Media.Ocr.OcrEngine, Windows.Foundation, ContentType=WindowsRuntime]
+$OcrResult = [Windows.Media.Ocr.OcrResult, Windows.Foundation, ContentType=WindowsRuntime]
+$Language = [Windows.Globalization.Language, Windows.Foundation, ContentType=WindowsRuntime]
+
+$path = $env:BALI_STOCK_OCR_IMAGE
+if ([string]::IsNullOrWhiteSpace($path)) { throw 'Invoice path is empty' }
+$file = Await-WinRT ($StorageFile::GetFileFromPathAsync($path)) $StorageFile
+$stream = Await-WinRT ($file.OpenAsync($FileAccessMode::Read)) $RandomAccessStream
+$decoder = Await-WinRT ($BitmapDecoder::CreateAsync($stream)) $BitmapDecoder
+$bitmap = Await-WinRT ($decoder.GetSoftwareBitmapAsync()) $SoftwareBitmap
+
+$engine = $null
+try {
+  $ru = New-Object Windows.Globalization.Language 'ru-RU'
+  $engine = $OcrEngine::TryCreateFromLanguage($ru)
+} catch {}
+if ($null -eq $engine) { $engine = $OcrEngine::TryCreateFromUserProfileLanguages() }
+if ($null -eq $engine) { throw 'Windows OCR language pack is not available' }
+
+$result = Await-WinRT ($engine.RecognizeAsync($bitmap)) $OcrResult
+Write-Output $result.Text
+''';
+
+    final result = await Process.run(
+      'powershell.exe',
+      const ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script],
+      environment: {...Platform.environment, 'BALI_STOCK_OCR_IMAGE': imagePath},
+      stdoutEncoding: systemEncoding,
+      stderrEncoding: systemEncoding,
+    );
+    if (result.exitCode != 0) {
+      final message = '${result.stderr}'.trim();
+      throw StateError(message.isEmpty ? 'Windows OCR не смог распознать накладную.' : 'Windows OCR: $message');
+    }
+    return '${result.stdout}'.trim();
   }
 
   InvoiceRecognitionResult parseText(
