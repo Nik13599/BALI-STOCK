@@ -1,0 +1,13 @@
+{
+  "name": "BALI STOCK",
+  "short_name": "BALI STOCK",
+  "description": "Складской учёт BALI — офлайн-кэш и синхронизация.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#07110c",
+  "theme_color": "#07110c",
+  "icons": [
+    {"src":"./bali_stock_logo.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}
+  ]
+}
