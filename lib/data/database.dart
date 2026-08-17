@@ -27,7 +27,7 @@ class BaliStockDatabase {
     return factory.openDatabase(
       p.join(dbPath, 'bali_stock.db'),
       options: OpenDatabaseOptions(
-        version: 6,
+        version: 7,
         onConfigure: (db) async {
           await db.execute('PRAGMA foreign_keys = ON');
         },
@@ -223,7 +223,7 @@ class BaliStockDatabase {
 
   static Future<void> _createIndexes(Database db) async {
     await db.execute('CREATE INDEX IF NOT EXISTS idx_products_category ON products(category_id)');
-    await db.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode) WHERE barcode IS NOT NULL AND barcode <> ""');
+    await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode) WHERE barcode IS NOT NULL AND barcode <> ''");
     await db.execute('CREATE INDEX IF NOT EXISTS idx_operations_created_at ON operations(created_at DESC)');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_stocktake_draft_lines_order ON stocktake_draft_lines(draft_id, sort_order)');
     await db.execute('''
