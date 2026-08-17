@@ -1,10 +1,11 @@
 import 'dart:io';
 import 'dart:math' as math;
 
-import 'package:flusseract/flusseract.dart' as tess;
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:platform_ocr/platform_ocr.dart';
 
 import '../models.dart';
 
@@ -23,6 +24,7 @@ class InvoiceRecognitionResult {
 class InvoiceRecognitionService {
   static const _languages = ['rus', 'eng'];
   static const _modelBase = 'https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main';
+  static const _androidTesseract = MethodChannel('tesseract_ocr');
 
   Future<InvoiceRecognitionResult> recognize({
     required String imagePath,
@@ -31,33 +33,46 @@ class InvoiceRecognitionService {
   }) async {
     if (products.isEmpty) throw StateError('В складе нет позиций для сопоставления с накладной.');
     final text = await extractText(imagePath);
-    if (text.trim().isEmpty) throw StateError('На накладной не удалось распознать текст. Попробуйте сфотографировать документ ровнее и при хорошем освещении.');
+    if (text.trim().isEmpty) {
+      throw StateError('На накладной не удалось распознать текст. Попробуйте сфотографировать документ ровнее и при хорошем освещении.');
+    }
     return parseText(text, products: products, supplierLinks: supplierLinks);
   }
 
   Future<String> extractText(String imagePath) async {
     final file = File(imagePath);
     if (!await file.exists()) throw StateError('Файл накладной не найден.');
-    final tessDataPath = await _ensureModels();
-    final engine = tess.Tesseract(
-      languages: _languages,
-      tessDataPath: tessDataPath,
-      pageSegMode: tess.PageSegMode.auto,
-    );
-    try {
-      engine.setVariable('preserve_interword_spaces', '1');
-      return await engine.processDocument(imagePath);
-    } finally {
-      engine.dispose();
+
+    if (Platform.isAndroid) {
+      final dataRoot = await _ensureAndroidModels();
+      final text = await _androidTesseract.invokeMethod<String>('extractText', {
+        'imagePath': imagePath,
+        'tessData': dataRoot,
+        'language': 'rus+eng',
+        'config': {
+          'language': 'rus+eng',
+          'preserve_interword_spaces': '1',
+          'tessedit_pageseg_mode': '3',
+        },
+      });
+      return text ?? '';
     }
+
+    if (Platform.isWindows || Platform.isIOS || Platform.isMacOS) {
+      final ocr = PlatformOcr();
+      return ocr.recognizeText(OcrSource.file(file));
+    }
+
+    throw UnsupportedError('OCR накладной пока не поддерживается на этой платформе.');
   }
 
-  Future<String> _ensureModels() async {
+  Future<String> _ensureAndroidModels() async {
     final support = await getApplicationSupportDirectory();
-    final directory = Directory(p.join(support.path, 'bali_stock_tessdata'));
-    if (!await directory.exists()) await directory.create(recursive: true);
+    final root = Directory(p.join(support.path, 'bali_stock_tesseract'));
+    final tessdata = Directory(p.join(root.path, 'tessdata'));
+    if (!await tessdata.exists()) await tessdata.create(recursive: true);
     for (final language in _languages) {
-      final target = File(p.join(directory.path, '$language.traineddata'));
+      final target = File(p.join(tessdata.path, '$language.traineddata'));
       if (await target.exists() && await target.length() > 100000) continue;
       final response = await http.get(Uri.parse('$_modelBase/$language.traineddata')).timeout(const Duration(seconds: 90));
       if (response.statusCode < 200 || response.statusCode >= 300 || response.bodyBytes.length < 100000) {
@@ -65,7 +80,8 @@ class InvoiceRecognitionService {
       }
       await target.writeAsBytes(response.bodyBytes, flush: true);
     }
-    return directory.path;
+    // TessBaseAPI.init expects the directory *containing* /tessdata.
+    return root.path;
   }
 
   InvoiceRecognitionResult parseText(
@@ -83,11 +99,21 @@ class InvoiceRecognitionService {
     final recognized = <InvoiceRecognitionLine>[];
 
     for (final product in products.where((product) => product.active)) {
+      final productKey = '${product.name.trim().toLowerCase()}|${product.stockUnit.dbValue}|${product.packageSize}';
+      final aliases = <String>[
+        product.name,
+        ...supplierLinks
+            .where((link) => link.productKey == productKey && link.active && link.supplierSku?.trim().isNotEmpty == true)
+            .map((link) => link.supplierSku!.trim()),
+      ];
       var bestIndex = -1;
       var bestScore = 0.0;
       for (var i = 0; i < sourceLines.length; i++) {
         if (used.contains(i)) continue;
-        final score = _nameScore(product.name, sourceLines[i]);
+        var score = 0.0;
+        for (final alias in aliases) {
+          score = math.max(score, _nameScore(alias, sourceLines[i]));
+        }
         if (score > bestScore) {
           bestScore = score;
           bestIndex = i;
@@ -127,10 +153,10 @@ class InvoiceRecognitionService {
   _QuantityGuess? _extractQuantity(Product product, List<String> lines) {
     final joined = lines.join(' | ').toLowerCase().replaceAll('х', 'x');
 
-    // Explicit package / piece count is the safest signal in supplier invoices.
-    final explicit = RegExp(r'(?:кол-?во|количество|qty|quantity)?\s*[:=]?\s*(\d{1,4}(?:[.,]\d+)?)\s*(?:x\s*)?(шт\.?|штук|бут\.?|бутыл(?:ка|ки|ок)?|уп\.?|упак(?:овка|овки|овок)?|pcs?|btl)', caseSensitive: false)
-        .allMatches(joined)
-        .toList();
+    final explicit = RegExp(
+      r'(?:кол-?во|количество|qty|quantity)?\s*[:=]?\s*(\d{1,4}(?:[.,]\d+)?)\s*(?:x\s*)?(шт\.?|штук|бут\.?|бутыл(?:ка|ки|ок)?|уп\.?|упак(?:овка|овки|овок)?|pcs?|btl)',
+      caseSensitive: false,
+    ).allMatches(joined).toList();
     for (final match in explicit.reversed) {
       final value = double.tryParse(match.group(1)!.replaceAll(',', '.'));
       if (value == null || value <= 0 || value > 10000) continue;
@@ -139,16 +165,13 @@ class InvoiceRecognitionService {
       return _QuantityGuess(base, packages, 0, 0.98);
     }
 
-    // Direct base units, useful for ingredients supplied by weight/volume.
     final direct = RegExp(r'(\d{1,7}(?:[.,]\d+)?)\s*(мл|ml|л|l|г|gr|g|кг|kg)\b', caseSensitive: false).allMatches(joined).toList();
     for (final match in direct.reversed) {
       final value = double.tryParse(match.group(1)!.replaceAll(',', '.'));
       if (value == null || value <= 0) continue;
       final unit = match.group(2)!.toLowerCase();
       int base;
-      if (unit == 'л' || unit == 'l') {
-        base = (value * 1000).round();
-      } else if (unit == 'кг' || unit == 'kg') {
+      if (unit == 'л' || unit == 'l' || unit == 'кг' || unit == 'kg') {
         base = (value * 1000).round();
       } else {
         base = value.round();
@@ -159,8 +182,6 @@ class InvoiceRecognitionService {
       return _QuantityGuess(base, packages, extra, 0.90);
     }
 
-    // Fallback: infer a likely quantity column from integers, while excluding
-    // the package size (700/750/1000 etc.) and numbers embedded in the SKU name.
     final productNumbers = RegExp(r'\d+').allMatches(product.name).map((m) => int.tryParse(m.group(0)!)).whereType<int>().toSet();
     final numbers = RegExp(r'(?<![.,\d])(\d{1,4})(?![.,\d])').allMatches(joined).map((m) => int.tryParse(m.group(1)!)).whereType<int>().toList();
     for (final value in numbers.reversed) {
@@ -180,7 +201,6 @@ class InvoiceRecognitionService {
         .where((value) => value > 0.01 && value < 100000)
         .toList();
     if (values.isEmpty) return null;
-    // On most invoices the first decimal after the item/quantity is the unit price.
     return values.first;
   }
 
