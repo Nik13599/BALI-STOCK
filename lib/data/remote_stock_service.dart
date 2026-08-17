@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -177,6 +178,9 @@ class RemoteStockService {
     required String pin,
     required StocktakeDraft draft,
     required int activeSeconds,
+    required Map<int, String> comments,
+    required Set<int> recheckedProductIds,
+    required List<List<double>> signaturePoints,
   }) async {
     final lines = draft.lines.map((line) {
       if (!line.isFilled) throw StateError('Переучёт нельзя завершить: заполнены не все позиции');
@@ -186,6 +190,10 @@ class RemoteStockService {
       return {
         'product_key': productKey(name: line.productName, unit: line.stockUnit, packageSize: line.packageSize),
         'quantity_base': quantity,
+        'comment': comments[line.productId]?.trim(),
+        'metadata': {
+          'rechecked': recheckedProductIds.contains(line.productId),
+        },
       };
     }).toList(growable: false);
     return post(pin, {
@@ -193,6 +201,11 @@ class RemoteStockService {
       'employee': draft.employeeName,
       'started_at': draft.startedAt.toUtc().toIso8601String(),
       'active_seconds': activeSeconds < 0 ? 0 : activeSeconds,
+      'metadata': {
+        'employee_confirmed': true,
+        'signature_points': signaturePoints,
+        'completed_positions': draft.totalCount,
+      },
       'lines': lines,
     });
   }
@@ -266,6 +279,26 @@ class RemoteStockService {
         if (varianceRecheckAmount != null) 'variance_recheck_amount': varianceRecheckAmount,
       });
 
+  Future<String> uploadInvoiceAttachment({
+    required String pin,
+    required Uint8List bytes,
+    required String fileName,
+    required String mimeType,
+  }) async {
+    final response = await post(pin, {
+      'action': 'invoice_attachment_upload',
+      'file_name': fileName,
+      'mime_type': mimeType,
+      'data_base64': base64Encode(bytes),
+    });
+    return '${response['path'] ?? ''}';
+  }
+
+  Future<String> createInvoiceAttachmentUrl({required String pin, required String path}) async {
+    final response = await post(pin, {'action': 'invoice_attachment_url', 'path': path});
+    return '${response['url'] ?? ''}';
+  }
+
   Future<String> saveInvoiceScan({
     required String pin,
     required String employee,
@@ -297,6 +330,37 @@ class RemoteStockService {
     });
     return '${response['id'] ?? ''}';
   }
+
+  Future<Map<String, dynamic>> createPurchaseRequest({
+    required String pin,
+    required String employee,
+    required List<PurchaseSuggestion> items,
+    String? supplierId,
+    String? comment,
+  }) async {
+    return post(pin, {
+      'action': 'purchase_request_create',
+      'employee': employee,
+      'supplier_id': supplierId,
+      'comment': comment,
+      'lines': items
+          .map((item) => {
+                'product_key': item.productKey,
+                'suggested_quantity': item.suggestedQuantity,
+                'requested_quantity': item.suggestedQuantity,
+                'unit_cost': item.lastPrice,
+              })
+          .toList(growable: false),
+    });
+  }
+
+  Future<Map<String, dynamic>> setPurchaseRequestStatus({
+    required String pin,
+    required String id,
+    required String status,
+    String? employee,
+  }) =>
+      post(pin, {'action': 'purchase_request_status', 'id': id, 'status': status, 'employee': employee});
 
   Future<void> syncDraft({required String pin, required StocktakeDraft draft}) async {
     final payload = {
@@ -338,7 +402,7 @@ class RemoteStockService {
           headers: {...readHeaders, 'Content-Type': 'application/json', 'x-bali-stock-pin': pin},
           body: jsonEncode(body),
         )
-        .timeout(const Duration(seconds: 30));
+        .timeout(const Duration(seconds: 90));
     return _decode(response);
   }
 
