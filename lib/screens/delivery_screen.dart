@@ -60,24 +60,24 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
     if (created != null && mounted) setState(() => _supplierId = created);
   }
 
+  XTypeGroup _imageTypeGroup() {
+    if (Platform.isWindows) {
+      return const XTypeGroup(label: 'Изображение накладной', extensions: ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'tif', 'tiff']);
+    }
+    if (Platform.isIOS) {
+      return const XTypeGroup(label: 'Изображение накладной', uniformTypeIdentifiers: ['public.image']);
+    }
+    return const XTypeGroup(label: 'Изображение накладной', mimeTypes: ['image/jpeg', 'image/png', 'image/webp', 'image/bmp', 'image/tiff']);
+  }
+
   Future<void> _scanInvoice({required bool camera}) async {
     if (_recognizing) return;
     XFile? file;
     try {
       if (camera && (Platform.isAndroid || Platform.isIOS)) {
-        file = await ImagePicker().pickImage(
-          source: ImageSource.camera,
-          imageQuality: 94,
-          maxWidth: 2600,
-        );
+        file = await ImagePicker().pickImage(source: ImageSource.camera, imageQuality: 94, maxWidth: 2600);
       } else {
-        const imageTypes = XTypeGroup(
-          label: 'Изображение накладной',
-          extensions: ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'tif', 'tiff'],
-          uniformTypeIdentifiers: ['public.image'],
-          mimeTypes: ['image/jpeg', 'image/png', 'image/webp', 'image/bmp', 'image/tiff'],
-        );
-        file = await openFile(acceptedTypeGroups: const [imageTypes]);
+        file = await openFile(acceptedTypeGroups: [_imageTypeGroup()]);
       }
       if (file == null || !mounted) return;
       setState(() {
@@ -98,15 +98,31 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
       });
       final doubtful = result.lines.where((line) => line.confidence < .72).length;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(
-          'Распознано ${result.lines.length} позиций${doubtful > 0 ? ', проверить вручную: $doubtful' : ''}. Перед проведением обязательно сверьте результат с накладной.',
-        ),
+        content: Text('Распознано ${result.lines.length} позиций${doubtful > 0 ? ', проверить вручную: $doubtful' : ''}. Перед проведением обязательно сверьте результат с накладной.'),
       ));
     } catch (e) {
       if (mounted) showErrorSnack(context, e);
     } finally {
       if (mounted) setState(() => _recognizing = false);
     }
+  }
+
+  String _mimeForPath(String path) {
+    final lower = path.toLowerCase();
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.webp')) return 'image/webp';
+    return 'image/jpeg';
+  }
+
+  Future<String?> _archiveInvoiceIfPresent() async {
+    final path = _invoicePath;
+    if (path == null) return null;
+    final file = File(path);
+    if (!await file.exists()) return null;
+    final bytes = await file.readAsBytes();
+    if (bytes.isEmpty) return null;
+    final fileName = path.split(Platform.pathSeparator).last;
+    return widget.controller.uploadInvoiceAttachment(bytes: bytes, fileName: fileName, mimeType: _mimeForPath(path));
   }
 
   Future<void> _submit() async {
@@ -133,12 +149,14 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
 
     setState(() => _saving = true);
     try {
+      final attachmentPath = await _archiveInvoiceIfPresent();
       String? scanId;
       if ((_rawOcrText?.trim().isNotEmpty ?? false)) {
         scanId = await widget.controller.saveInvoiceScan(
           employee: _employee.text.trim(),
           supplierId: _supplierId,
           documentNumber: _document.text.trim().isEmpty ? null : _document.text.trim(),
+          attachmentUrl: attachmentPath,
           rawText: _rawOcrText!,
           lines: _lines.values.toList(growable: false),
         );
@@ -149,11 +167,12 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
         supplierId: _supplierId,
         documentNumber: _document.text.trim().isEmpty ? null : _document.text.trim(),
         comment: _comment.text.trim().isEmpty ? null : _comment.text.trim(),
+        attachmentUrl: attachmentPath,
         locationId: _locationId,
         metadata: {
           if (scanId?.isNotEmpty == true) 'invoice_scan_id': scanId,
           'ocr_used': _rawOcrText?.trim().isNotEmpty == true,
-          if (_invoicePath != null) 'local_invoice_file_name': _invoicePath!.split(Platform.pathSeparator).last,
+          'invoice_archived': attachmentPath?.isNotEmpty == true,
         },
       );
       if (!mounted) return;
@@ -166,13 +185,8 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
         _comment.clear();
       });
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: const Text('Поставка принята. Остатки обновлены на всех устройствах.'),
-        action: operation == null
-            ? null
-            : SnackBarAction(
-                label: 'PDF',
-                onPressed: () => PdfExportService.exportOperation(operation),
-              ),
+        content: Text(attachmentPath == null ? 'Поставка принята. Остатки обновлены на всех устройствах.' : 'Поставка принята. Накладная сохранена в приватном архиве.'),
+        action: operation == null ? null : SnackBarAction(label: 'PDF', onPressed: () => PdfExportService.exportOperation(operation)),
       ));
     } catch (e) {
       if (mounted) showErrorSnack(context, e);
@@ -203,7 +217,7 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
                       children: [
                         const InfoBanner(
                           icon: Icons.document_scanner_outlined,
-                          text: 'Накладную можно сфотографировать или выбрать как изображение. OCR распознаёт русский и английский текст, но НИКОГДА не проводит поставку автоматически: все строки можно проверить и исправить вручную.',
+                          text: 'Накладную можно сфотографировать или выбрать как изображение. OCR распознаёт русский и английский текст, но никогда не проводит поставку автоматически: все строки проверяются и редактируются вручную. Исходное фото сохраняется в приватном архиве после проведения.',
                         ),
                         const SizedBox(height: 18),
                         _deliveryHeader(context),
@@ -300,16 +314,11 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
           ),
         FilledButton.tonalIcon(
           onPressed: _recognizing || _saving ? null : () => _scanInvoice(camera: false),
-          icon: _recognizing
-              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-              : const Icon(Icons.document_scanner_outlined),
+          icon: _recognizing ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.document_scanner_outlined),
           label: Text(_recognizing ? 'Распознавание…' : 'Выбрать скан / фото'),
         ),
         if (_rawOcrText != null)
-          Chip(
-            avatar: const Icon(Icons.auto_awesome, size: 18),
-            label: Text('OCR: ${_lines.values.where((line) => line.confidence != null).length} поз.'),
-          ),
+          Chip(avatar: const Icon(Icons.auto_awesome, size: 18), label: Text('OCR: ${_lines.values.where((line) => line.confidence != null).length} поз.')),
       ],
     );
   }
@@ -485,9 +494,7 @@ Future<DeliveryDraftLine?> showDeliveryLineDialog(
                       initialValue: productId,
                       isExpanded: true,
                       decoration: const InputDecoration(labelText: 'Позиция'),
-                      items: products
-                          .map((p) => DropdownMenuItem(value: p.id, child: Text('${p.categoryName} — ${p.name} (${_productUnitLabel(p)})')))
-                          .toList(growable: false),
+                      items: products.map((p) => DropdownMenuItem(value: p.id, child: Text('${p.categoryName} — ${p.name} (${_productUnitLabel(p)})'))).toList(growable: false),
                       onChanged: (value) {
                         if (value != null) {
                           setState(() {
