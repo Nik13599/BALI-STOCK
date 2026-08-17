@@ -1,4 +1,4 @@
-name: Deploy BALI STOCK iPhone V12 Fixed
+name: Deploy BALI STOCK iPhone V13 Full
 
 on:
   push:
@@ -15,7 +15,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: "pages-v12-fixed"
+  group: "pages-v13-full"
   cancel-in-progress: true
 
 jobs:
@@ -26,12 +26,27 @@ jobs:
         uses: actions/checkout@v6
       - name: Configure Pages
         uses: actions/configure-pages@v5
-      - name: Build fixed iPhone PWA
+      - name: Build V13 feature layer
+        shell: bash
+        run: |
+          cat ios-web/v13/part-*.js > /tmp/v13-complete.js
+          bytes=$(wc -c < /tmp/v13-complete.js | tr -d ' ')
+          echo "V13 bytes: $bytes"
+          test "$bytes" = "44291"
+          node --check /tmp/v13-complete.js
+          grep -q "BALI_STOCK_MOBILE_VERSION" /tmp/v13-complete.js
+          grep -q "v13Category" /tmp/v13-complete.js
+          grep -q "bali-stock-catalog-api" /tmp/v13-complete.js
+          grep -q "__v13CorrectOperation" /tmp/v13-complete.js
+          grep -q "__v13LinkSupplier" /tmp/v13-complete.js
+          grep -q "v13CountCat" /tmp/v13-complete.js
+      - name: Build iPhone PWA
         shell: bash
         run: |
           mkdir -p _site
           cp ios-web/v2.html _site/index.html
           cp ios-web/v12-offline.js _site/v12-offline.js
+          cp /tmp/v13-complete.js _site/v13-complete.js
           cp ios-web/sw.js _site/sw.js
           cp ios-web/manifest.webmanifest _site/manifest.webmanifest
           cp assets/branding/bali_stock_logo.png _site/bali_stock_logo.png
@@ -41,13 +56,13 @@ jobs:
 
           p = Path('_site/index.html')
           html = p.read_text(encoding='utf-8')
-          js = Path('ios-web/v12-offline.js').read_text(encoding='utf-8')
+          v12 = Path('ios-web/v12-offline.js').read_text(encoding='utf-8')
+          v13 = Path('/tmp/v13-complete.js').read_text(encoding='utf-8')
 
           html = html.replace(
               r'/(?<![.,\d])(\d{1,4})(?![.,\d])/g',
               r'/(?:^|[^.,\d])(\d{1,4})(?![.,\d])/g'
           )
-
           html, fixed_count = re.subn(
               r'return,([A-Za-z_$][A-Za-z0-9_$]*)=',
               r'return;let \1=',
@@ -72,11 +87,12 @@ jobs:
           marker = "(async()=>{try{await snapshot();"
           if marker not in html:
               raise SystemExit('Startup marker not found')
-          html = html.replace(marker, js + '\n' + marker, 1)
+          # V12 establishes IndexedDB/offline wrappers first; V13 then upgrades all UI/workflows.
+          html = html.replace(marker, v12 + '\n' + v13 + '\n' + marker, 1)
           p.write_text(html, encoding='utf-8')
           PY
           touch _site/.nojekyll
-      - name: Validate generated JavaScript syntax
+      - name: Validate complete generated JavaScript
         shell: bash
         run: |
           python3 - <<'PY'
@@ -89,16 +105,23 @@ jobs:
           if not scripts:
               raise SystemExit('No inline JavaScript found')
           for i, script in enumerate(scripts):
-              f = Path(f'/tmp/bali-inline-{i}.js')
+              f = Path(f'/tmp/bali-v13-inline-{i}.js')
               f.write_text(script, encoding='utf-8')
               subprocess.run(['node', '--check', str(f)], check=True)
-          print(f'JavaScript syntax OK: {len(scripts)} inline block(s)')
+          print(f'All generated JavaScript syntax OK: {len(scripts)} inline block(s)')
           PY
-      - name: Validate PWA payload
+      - name: Validate V13 functional payload
         run: |
           grep -q "BALI STOCK" _site/index.html
           grep -q "V12_SYNC_API" _site/index.html
+          grep -q "BALI_STOCK_MOBILE_VERSION" _site/index.html
+          grep -q "v13Category" _site/index.html
+          grep -q "bali-stock-catalog-api" _site/index.html
+          grep -q "__v13CorrectOperation" _site/index.html
+          grep -q "__v13LinkSupplier" _site/index.html
+          grep -q "v13CountCat" _site/index.html
           grep -q "Html5Qrcode" _site/index.html
+          grep -q "bali-stock-v13-shell-1" _site/sw.js
           grep -q "manifest.webmanifest" _site/index.html
           test -s _site/sw.js
       - name: Upload Pages artifact
