@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models.dart';
 import '../v14_controller.dart';
+import '../widgets/bali_nav_icon.dart';
 import 'control_screen.dart';
 import 'history_overview_screen.dart';
 
@@ -12,36 +13,40 @@ class ControlHubV14Screen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Контроль')),
+      appBar: AppBar(title: const Text('Настройки')),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 18, 20, 100),
         children: [
+          const Padding(
+            padding: EdgeInsets.only(bottom: 14),
+            child: Text('История находится только здесь. В нижнем меню отдельной вкладки истории нет.', style: TextStyle(fontWeight: FontWeight.w700)),
+          ),
           _ControlCard(
-            icon: Icons.history_toggle_off,
+            icon: BaliNavIconKind.history,
             title: 'История всех операций',
             subtitle: 'Поставки, полные переучёты, списания, перемещения, корректировки и PDF по операциям.',
             onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => HistoryOverviewScreen(controller: controller))),
           ),
           _ControlCard(
-            icon: Icons.center_focus_strong,
+            icon: BaliNavIconKind.spot,
             title: 'Точечные переучёты',
             subtitle: '${controller.spotStocktakeHistory.length} операций • было → разница → стало • причина, ФИО и устройство.',
             onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => _SpotStocktakeHistoryScreen(controller: controller))),
           ),
           _ControlCard(
-            icon: Icons.tune,
+            icon: BaliNavIconKind.stock,
             title: 'Управление складом',
             subtitle: 'Движения, поставщики, места хранения, параметры товаров, закупки и аналитика расхождений.',
             onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ControlScreen(controller: controller))),
           ),
           _ControlCard(
-            icon: Icons.price_change_outlined,
+            icon: BaliNavIconKind.prices,
             title: 'История карточек и цен',
             subtitle: 'Изменения продажных цен и параметров SKU сохраняются в аудите и не удаляют предыдущие значения.',
             onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => _CatalogAuditScreen(controller: controller))),
           ),
           _ControlCard(
-            icon: controller.sharedOnline ? Icons.cloud_done_outlined : Icons.cloud_off_outlined,
+            icon: BaliNavIconKind.sync,
             title: 'Синхронизация',
             subtitle: controller.pendingSyncCount > 0
                 ? 'Ожидает отправки: ${controller.pendingSyncCount}. Данные будут отправлены автоматически.'
@@ -58,7 +63,7 @@ class ControlHubV14Screen extends StatelessWidget {
 
 class _ControlCard extends StatelessWidget {
   const _ControlCard({required this.icon, required this.title, required this.subtitle, required this.onTap});
-  final IconData icon;
+  final BaliNavIconKind icon;
   final String title;
   final String subtitle;
   final VoidCallback onTap;
@@ -68,10 +73,10 @@ class _ControlCard extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 12),
         child: ListTile(
           contentPadding: const EdgeInsets.all(18),
-          leading: CircleAvatar(radius: 25, child: Icon(icon)),
+          leading: CircleAvatar(radius: 25, child: BaliNavIcon(kind: icon, active: true, size: 25)),
           title: Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
           subtitle: Padding(padding: const EdgeInsets.only(top: 6), child: Text(subtitle)),
-          trailing: const Icon(Icons.chevron_right),
+          trailing: const Text('›', style: TextStyle(fontSize: 30, fontWeight: FontWeight.w300)),
           onTap: onTap,
         ),
       );
@@ -105,10 +110,11 @@ class _SpotStocktakeHistoryScreen extends StatelessWidget {
                 final diff = _int(line?['change_quantity']);
                 final unit = StockUnitX.fromDb(line?['stock_unit'] as String?);
                 final packageSize = _int(line?['package_size'], fallback: 1);
+                final syncStatus = '${meta['sync_status'] ?? operation['sync_status'] ?? 'synced'}';
                 return Card(
                   margin: const EdgeInsets.only(bottom: 10),
                   child: ExpansionTile(
-                    leading: const CircleAvatar(child: Icon(Icons.center_focus_strong)),
+                    leading: const CircleAvatar(child: BaliNavIcon(kind: BaliNavIconKind.spot, active: true, size: 23)),
                     title: Text('${line?['product_name'] ?? 'Товар'}', style: const TextStyle(fontWeight: FontWeight.w900)),
                     subtitle: Text('${created == null ? '—' : formatDateTime(created)}${operation['employee_name'] == null ? '' : ' • ${operation['employee_name']}'}'),
                     childrenPadding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
@@ -119,7 +125,7 @@ class _SpotStocktakeHistoryScreen extends StatelessWidget {
                       _HistoryValue('Причина', '${meta['reason'] ?? line?['metadata']?['reason'] ?? '—'}'),
                       _HistoryValue('Устройство', '${meta['device'] ?? line?['metadata']?['device'] ?? '—'}'),
                       _HistoryValue('Комментарий', '${operation['comment'] ?? '—'}'),
-                      const _HistoryValue('Статус синхронизации', 'Синхронизировано'),
+                      _HistoryValue('Статус синхронизации', syncStatus == 'pending' ? 'Ожидает синхронизации' : 'Синхронизировано'),
                     ],
                   ),
                 );
@@ -172,7 +178,7 @@ class _CatalogAuditScreen extends StatelessWidget {
                 return Card(
                   margin: const EdgeInsets.only(bottom: 8),
                   child: ListTile(
-                    leading: const Icon(Icons.history),
+                    leading: const BaliNavIcon(kind: BaliNavIconKind.history, active: true),
                     title: Text('$name', style: const TextStyle(fontWeight: FontWeight.w800)),
                     subtitle: Text('${_date(entry.createdAt)}${entry.actor == null ? '' : ' • ${entry.actor}'}'),
                     trailing: oldPrice != newPrice ? Text('${oldPrice ?? '—'} → ${newPrice ?? '—'} BYN', style: const TextStyle(fontWeight: FontWeight.w900)) : const Text('Карточка'),
