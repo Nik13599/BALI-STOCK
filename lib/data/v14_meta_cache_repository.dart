@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:sqflite_common/sqlite_api.dart';
 
+import '../v14_models.dart';
 import 'database.dart';
 
 class V14MetaCacheRepository {
@@ -14,6 +15,13 @@ class V14MetaCacheRepository {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS v14_meta_cache (
         id INTEGER PRIMARY KEY CHECK (id = 1),
+        payload_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS v14_pending_product_meta (
+        product_key TEXT PRIMARY KEY,
         payload_json TEXT NOT NULL,
         updated_at TEXT NOT NULL
       )
@@ -62,5 +70,37 @@ class V14MetaCacheRepository {
     final decoded = jsonDecode(rows.first['payload_json'] as String);
     if (decoded is! Map) return null;
     return decoded.map((key, value) => MapEntry('$key', value));
+  }
+
+  Future<void> savePending(String productKey, ProductV14Meta meta) async {
+    await ensureSchema();
+    final db = await _database.database;
+    await db.insert(
+      'v14_pending_product_meta',
+      {
+        'product_key': productKey,
+        'payload_json': jsonEncode(meta.toJson()),
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<Map<String, ProductV14Meta>> loadPending() async {
+    await ensureSchema();
+    final db = await _database.database;
+    final rows = await db.query('v14_pending_product_meta', orderBy: 'updated_at');
+    final result = <String, ProductV14Meta>{};
+    for (final row in rows) {
+      final decoded = jsonDecode(row['payload_json'] as String);
+      if (decoded is Map) result[row['product_key'] as String] = ProductV14Meta.fromJson(decoded);
+    }
+    return result;
+  }
+
+  Future<void> clearPending() async {
+    await ensureSchema();
+    final db = await _database.database;
+    await db.delete('v14_pending_product_meta');
   }
 }
