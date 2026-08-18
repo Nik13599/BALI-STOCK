@@ -390,7 +390,9 @@ bool _sameMeta(ProductV14Meta a, ProductV14Meta b) {
     return false;
   }
   for (var i = 0; i < a.portions.length; i++) {
-    if (a.portions[i].amount != b.portions[i].amount || a.portions[i].price != b.portions[i].price) return false;
+    if (a.portions[i].amount != b.portions[i].amount || a.portions[i].price != b.portions[i].price) {
+      return false;
+    }
   }
   return true;
 }
