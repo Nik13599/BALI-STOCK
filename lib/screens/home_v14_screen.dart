@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../models.dart';
 import '../v14_controller.dart';
+import '../widgets/bali_nav_icon.dart';
 import '../widgets/common.dart';
 import 'product_code_scanner_screen.dart';
 import 'product_detail_v14_screen.dart';
@@ -20,7 +21,7 @@ class _HomeV14ScreenState extends State<HomeV14Screen> {
   final search = TextEditingController();
   String query = '';
 
-  bool get cameraScannerAvailable => Platform.isAndroid || Platform.isIOS;
+  bool get _cameraScannerAvailable => Platform.isAndroid || Platform.isIOS;
 
   @override
   void dispose() {
@@ -47,8 +48,50 @@ class _HomeV14ScreenState extends State<HomeV14Screen> {
     _handleCode(code);
   }
 
+  Future<String?> _desktopScannerCode() async {
+    final controller = TextEditingController();
+    final result = await showDialog<String>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Сканировать код'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Отсканируйте штрихкод USB/Bluetooth-сканером. Поле уже в фокусе; большинство сканеров отправляют Enter автоматически.'),
+            const SizedBox(height: 14),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: 'QR / штрихкод', hintText: 'Сканируйте или введите код'),
+              onSubmitted: (value) {
+                final code = value.trim();
+                if (code.isNotEmpty) Navigator.of(dialogContext).pop(code);
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('Отмена')),
+          FilledButton(
+            onPressed: () {
+              final code = controller.text.trim();
+              if (code.isNotEmpty) Navigator.of(dialogContext).pop(code);
+            },
+            child: const Text('Найти'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    return result;
+  }
+
   Future<void> _scan() async {
-    final code = await Navigator.of(context).push<String>(MaterialPageRoute(builder: (_) => const ProductCodeScannerScreen()));
+    final code = _cameraScannerAvailable
+        ? await Navigator.of(context).push<String>(MaterialPageRoute(builder: (_) => const ProductCodeScannerScreen()))
+        : await _desktopScannerCode();
     if (!mounted || code == null || code.trim().isEmpty) return;
     _handleCode(code);
   }
@@ -92,14 +135,26 @@ class _HomeV14ScreenState extends State<HomeV14Screen> {
           body: ListView(
             padding: const EdgeInsets.fromLTRB(20, 18, 20, 100),
             children: [
-              Text('Быстрый доступ к товару', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900)),
+              Text('Главная', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900)),
               const SizedBox(height: 6),
-              Text('Найдите позицию по названию, QR/штрихкоду или коду вручную.', style: Theme.of(context).textTheme.bodyLarge),
+              Text('Сканируйте код или найдите товар по названию и штрихкоду.', style: Theme.of(context).textTheme.bodyLarge),
               const SizedBox(height: 18),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _scan,
+                  icon: const BaliNavIcon(kind: BaliNavIconKind.scan, active: true, size: 22),
+                  label: const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 5),
+                    child: Text('Сканировать код', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
               TextField(
                 controller: search,
                 autofocus: false,
-                decoration: const InputDecoration(prefixIcon: Icon(Icons.search), labelText: 'Поиск по названию или коду', suffixIcon: Icon(Icons.inventory_2_outlined)),
+                decoration: const InputDecoration(prefixIcon: Icon(Icons.search), labelText: 'Найти товар по имени или коду'),
                 onChanged: (value) => setState(() => query = value),
               ),
               const SizedBox(height: 12),
@@ -107,10 +162,12 @@ class _HomeV14ScreenState extends State<HomeV14Screen> {
                 spacing: 10,
                 runSpacing: 10,
                 children: [
-                  if (cameraScannerAvailable)
-                    FilledButton.icon(onPressed: _scan, icon: const Icon(Icons.qr_code_scanner), label: const Text('Сканировать QR / штрихкод')),
                   OutlinedButton.icon(onPressed: _manualCode, icon: const Icon(Icons.numbers), label: const Text('Ввести код вручную')),
-                  OutlinedButton.icon(onPressed: widget.controller.refresh, icon: const Icon(Icons.sync), label: const Text('Синхронизировать')),
+                  OutlinedButton.icon(
+                    onPressed: widget.controller.refresh,
+                    icon: const BaliNavIcon(kind: BaliNavIconKind.sync, size: 20),
+                    label: const Text('Синхронизировать'),
+                  ),
                 ],
               ),
               if (q.isNotEmpty) ...[
