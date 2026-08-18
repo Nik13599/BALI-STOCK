@@ -30,7 +30,7 @@
   const source = 'https://mvnxfouyoynqyjdpcblh.supabase.co/functions/v1/bali-stock-ios';
   const status = document.getElementById('status');
   try {
-    const response = await fetch(source + '?launcher=1&ts=' + Date.now(), {
+    const response = await fetch(source + '?launcher=2&ts=' + Date.now(), {
       cache: 'no-store',
       headers: { Accept: 'text/html,*/*' }
     });
@@ -45,6 +45,52 @@
       "(!p.stock_unit==='pcs'&&e>=p.package_size)",
       "(p.stock_unit!=='pcs'&&e>=p.package_size)"
     );
+
+    // Keep the primary home action explicit for staff.
+    html = html.replace('>📷 Сканировать</button>', '>📷 Сканировать код</button>');
+
+    // Safety layer: if an older UI payload does not render the button, inject it
+    // on the current home screen and bind it to the same camera scanner.
+    const scanSafety = `<script>
+(function(){
+  function launchScanner(){
+    if(typeof window.startProductCodeScanner==='function'){
+      window.startProductCodeScanner();
+      return;
+    }
+    if(typeof window.enterProductCodeManually==='function'){
+      window.enterProductCodeManually();
+      return;
+    }
+    if(typeof toast==='function') toast('Сканер ещё загружается. Повторите через секунду.',true);
+  }
+  function ensureScanButton(){
+    var existing=document.getElementById('homeScan');
+    if(existing){existing.textContent='📷 Сканировать код';return;}
+    var homeTab=document.querySelector('#tabs button[data-tab="home"]');
+    var activeHome=!homeTab||homeTab.classList.contains('active');
+    if(!activeHome)return;
+    var target=document.querySelector('#app .section')||document.getElementById('app');
+    if(!target||document.getElementById('baliScanShortcut'))return;
+    var wrap=document.createElement('div');
+    wrap.id='baliScanShortcut';
+    wrap.style='margin:0 0 14px 0';
+    var btn=document.createElement('button');
+    btn.type='button';
+    btn.textContent='📷 Сканировать код';
+    btn.style='width:100%;font-size:17px;padding:14px 16px';
+    btn.onclick=launchScanner;
+    wrap.appendChild(btn);
+    target.insertBefore(wrap,target.firstChild);
+  }
+  var observer=new MutationObserver(function(){setTimeout(ensureScanButton,0)});
+  observer.observe(document.documentElement,{childList:true,subtree:true});
+  document.addEventListener('DOMContentLoaded',ensureScanButton);
+  setTimeout(ensureScanButton,250);
+  setTimeout(ensureScanButton,1200);
+})();
+<\/script>`;
+    html = html.replace('</body>', scanSafety + '\n</body>');
 
     // Supabase serves Edge Function HTML as text/plain. This launcher is itself
     // served as text/html; it fetches the generated app as text and lets Safari
