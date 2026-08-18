@@ -7,8 +7,8 @@ class PortionPrice {
   final double price;
 
   factory PortionPrice.fromJson(Map<dynamic, dynamic> json) => PortionPrice(
-        amount: _asInt(json['ml'], fallback: 1).clamp(1, 1 << 31),
-        price: (_asDouble(json['price']) ?? 0).clamp(0, double.infinity),
+        amount: _asInt(json['ml'], fallback: 1).clamp(1, 1 << 31).toInt(),
+        price: (_asDouble(json['price']) ?? 0).clamp(0, double.infinity).toDouble(),
       );
 
   Map<String, dynamic> toJson() => {'ml': amount, 'price': price};
