@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../data/v14_settings_repository.dart';
 import '../models.dart';
 import '../services/pdf_export_service.dart';
 import '../v14_controller.dart';
@@ -17,6 +18,8 @@ class StockV14Screen extends StatefulWidget {
 }
 
 class _StockV14ScreenState extends State<StockV14Screen> {
+  final V14SettingsRepository _settings = V14SettingsRepository();
+
   String query = '';
   String? category;
   String? supplierId;
@@ -28,6 +31,30 @@ class _StockV14ScreenState extends State<StockV14Screen> {
   StockListViewMode viewMode = StockListViewMode.compact;
   StockSortMode sortMode = StockSortMode.name;
   bool exporting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _restoreViewMode();
+  }
+
+  Future<void> _restoreViewMode() async {
+    try {
+      final saved = await _settings.loadStockViewMode();
+      if (mounted) setState(() => viewMode = saved);
+    } catch (_) {
+      // The default compact view remains usable even if a local preference cannot be read.
+    }
+  }
+
+  Future<void> _setViewMode(StockListViewMode mode) async {
+    setState(() => viewMode = mode);
+    try {
+      await _settings.saveStockViewMode(mode);
+    } catch (_) {
+      // View selection is still applied for the current session.
+    }
+  }
 
   List<Product> _filtered() {
     final q = query.trim().toLowerCase();
@@ -44,7 +71,7 @@ class _StockV14ScreenState extends State<StockV14Screen> {
       return true;
     }).toList(growable: true);
 
-    int compareDouble(double? a, double? b) => (a ?? double.negativeInfinity).compareTo(b ?? double.negativeInfinity);
+    int compareNullable(double? a, double? b) => (a ?? double.negativeInfinity).compareTo(b ?? double.negativeInfinity);
     list.sort((a, b) {
       final ma = widget.controller.metaFor(a);
       final mb = widget.controller.metaFor(b);
@@ -52,21 +79,21 @@ class _StockV14ScreenState extends State<StockV14Screen> {
         case StockSortMode.name:
           return a.name.toLowerCase().compareTo(b.name.toLowerCase());
         case StockSortMode.category:
-          final c = a.categoryName.toLowerCase().compareTo(b.categoryName.toLowerCase());
-          return c != 0 ? c : a.name.toLowerCase().compareTo(b.name.toLowerCase());
+          final byCategory = a.categoryName.toLowerCase().compareTo(b.categoryName.toLowerCase());
+          return byCategory != 0 ? byCategory : a.name.toLowerCase().compareTo(b.name.toLowerCase());
         case StockSortMode.quantity:
           return b.totalAmount.compareTo(a.totalAmount);
         case StockSortMode.purchasePrice:
-          return compareDouble(b.defaultCost, a.defaultCost);
+          return compareNullable(b.defaultCost, a.defaultCost);
         case StockSortMode.salePrice:
-          return compareDouble(mb.bottleSalePrice, ma.bottleSalePrice);
+          return compareNullable(mb.bottleSalePrice, ma.bottleSalePrice);
         case StockSortMode.margin:
-          return compareDouble(
+          return compareNullable(
             ProductEconomics(product: b, meta: mb).bottleMarginPercent,
             ProductEconomics(product: a, meta: ma).bottleMarginPercent,
           );
         case StockSortMode.stockValue:
-          return compareDouble(
+          return compareNullable(
             ProductEconomics(product: b, meta: mb).stockCost,
             ProductEconomics(product: a, meta: ma).stockCost,
           );
@@ -87,8 +114,10 @@ class _StockV14ScreenState extends State<StockV14Screen> {
     }
   }
 
-  void _open(Product p) {
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => ProductDetailV14Screen(controller: widget.controller, product: p)));
+  void _open(Product product) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => ProductDetailV14Screen(controller: widget.controller, product: product)),
+    );
   }
 
   @override
@@ -96,7 +125,7 @@ class _StockV14ScreenState extends State<StockV14Screen> {
     return AnimatedBuilder(
       animation: widget.controller,
       builder: (context, _) {
-        final list = _filtered();
+        final products = _filtered();
         return Scaffold(
           appBar: AppBar(
             title: const Text('Склад'),
@@ -104,20 +133,22 @@ class _StockV14ScreenState extends State<StockV14Screen> {
               IconButton(
                 tooltip: 'PDF текущих остатков',
                 onPressed: exporting ? null : _exportPdf,
-                icon: exporting ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.picture_as_pdf_outlined),
+                icon: exporting
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.picture_as_pdf_outlined),
               ),
               IconButton(tooltip: 'Обновить', onPressed: widget.controller.refresh, icon: const Icon(Icons.refresh)),
             ],
           ),
           body: Column(
             children: [
-              _toolbar(list.length),
+              _toolbar(products.length),
               Expanded(
                 child: widget.controller.loading
                     ? const Center(child: CircularProgressIndicator())
-                    : list.isEmpty
+                    : products.isEmpty
                         ? const EmptyState(icon: Icons.search_off, title: 'Ничего не найдено', message: 'Измените поиск или фильтры.')
-                        : _content(list),
+                        : _content(products),
               ),
             ],
           ),
@@ -131,26 +162,32 @@ class _StockV14ScreenState extends State<StockV14Screen> {
     return Material(
       color: Theme.of(context).colorScheme.surface,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+        padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
         child: Column(
           children: [
             Row(
               children: [
                 Expanded(
                   child: TextField(
-                    decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'Название, код, категория', isDense: true),
+                    decoration: const InputDecoration(
+                      prefixIcon: Icon(Icons.search),
+                      hintText: 'Название, код, категория',
+                      isDense: true,
+                    ),
                     onChanged: (value) => setState(() => query = value),
                   ),
                 ),
                 const SizedBox(width: 8),
                 FilledButton.icon(
-                  onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => BulkProductEditV14Screen(controller: widget.controller))),
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => BulkProductEditV14Screen(controller: widget.controller)),
+                  ),
                   icon: const Icon(Icons.edit_note),
                   label: const Text('Редактировать'),
                 ),
               ],
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(
@@ -175,7 +212,9 @@ class _StockV14ScreenState extends State<StockV14Screen> {
                       decoration: const InputDecoration(labelText: 'Поставщик', isDense: true),
                       items: [
                         const DropdownMenuItem<String?>(value: null, child: Text('Все поставщики')),
-                        ...widget.controller.suppliers.where((x) => x.active).map((x) => DropdownMenuItem<String?>(value: x.id, child: Text(x.name))),
+                        ...widget.controller.suppliers
+                            .where((x) => x.active)
+                            .map((x) => DropdownMenuItem<String?>(value: x.id, child: Text(x.name))),
                       ],
                       onChanged: (value) => setState(() => supplierId = value),
                     ),
@@ -193,37 +232,38 @@ class _StockV14ScreenState extends State<StockV14Screen> {
                 ],
               ),
             ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                  child: SegmentedButton<StockListViewMode>(
+            const SizedBox(height: 8),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  SegmentedButton<StockListViewMode>(
                     segments: const [
                       ButtonSegment(value: StockListViewMode.compact, icon: Icon(Icons.view_list), label: Text('Компактно')),
                       ButtonSegment(value: StockListViewMode.detailed, icon: Icon(Icons.view_agenda_outlined), label: Text('Подробно')),
                       ButtonSegment(value: StockListViewMode.table, icon: Icon(Icons.table_chart_outlined), label: Text('Таблица')),
                     ],
                     selected: {viewMode},
-                    onSelectionChanged: (value) => setState(() => viewMode = value.first),
+                    onSelectionChanged: (value) => _setViewMode(value.first),
                   ),
-                ),
-                const SizedBox(width: 10),
-                DropdownButton<StockSortMode>(
-                  value: sortMode,
-                  items: const [
-                    DropdownMenuItem(value: StockSortMode.name, child: Text('По названию')),
-                    DropdownMenuItem(value: StockSortMode.category, child: Text('По категории')),
-                    DropdownMenuItem(value: StockSortMode.quantity, child: Text('По остатку')),
-                    DropdownMenuItem(value: StockSortMode.purchasePrice, child: Text('По закупке')),
-                    DropdownMenuItem(value: StockSortMode.salePrice, child: Text('По продаже')),
-                    DropdownMenuItem(value: StockSortMode.margin, child: Text('По марже')),
-                    DropdownMenuItem(value: StockSortMode.stockValue, child: Text('По стоимости остатка')),
-                  ],
-                  onChanged: (value) => setState(() => sortMode = value ?? sortMode),
-                ),
-                const SizedBox(width: 10),
-                Text('$count поз.', style: const TextStyle(fontWeight: FontWeight.w800)),
-              ],
+                  const SizedBox(width: 10),
+                  DropdownButton<StockSortMode>(
+                    value: sortMode,
+                    items: const [
+                      DropdownMenuItem(value: StockSortMode.name, child: Text('По названию')),
+                      DropdownMenuItem(value: StockSortMode.category, child: Text('По категории')),
+                      DropdownMenuItem(value: StockSortMode.quantity, child: Text('По остатку')),
+                      DropdownMenuItem(value: StockSortMode.purchasePrice, child: Text('По закупке')),
+                      DropdownMenuItem(value: StockSortMode.salePrice, child: Text('По продаже')),
+                      DropdownMenuItem(value: StockSortMode.margin, child: Text('По марже')),
+                      DropdownMenuItem(value: StockSortMode.stockValue, child: Text('По стоимости остатка')),
+                    ],
+                    onChanged: (value) => setState(() => sortMode = value ?? sortMode),
+                  ),
+                  const SizedBox(width: 10),
+                  Text('$count поз.', style: const TextStyle(fontWeight: FontWeight.w800)),
+                ],
+              ),
             ),
           ],
         ),
@@ -231,26 +271,26 @@ class _StockV14ScreenState extends State<StockV14Screen> {
     );
   }
 
-  Widget _content(List<Product> list) {
+  Widget _content(List<Product> products) {
     switch (viewMode) {
       case StockListViewMode.compact:
         return ListView.separated(
-          padding: const EdgeInsets.fromLTRB(14, 10, 14, 100),
-          itemCount: list.length,
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 100),
+          itemCount: products.length,
           separatorBuilder: (_, __) => const Divider(height: 1),
-          itemBuilder: (_, i) => _CompactTile(product: list[i], controller: widget.controller, onTap: () => _open(list[i])),
+          itemBuilder: (_, i) => _CompactTile(product: products[i], controller: widget.controller, onTap: () => _open(products[i])),
         );
       case StockListViewMode.detailed:
         return ListView.builder(
-          padding: const EdgeInsets.fromLTRB(14, 10, 14, 100),
-          itemCount: list.length,
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 100),
+          itemCount: products.length,
           itemBuilder: (_, i) => Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: _DetailedTile(product: list[i], controller: widget.controller, onTap: () => _open(list[i])),
+            padding: const EdgeInsets.only(bottom: 9),
+            child: _DetailedTile(product: products[i], controller: widget.controller, onTap: () => _open(products[i])),
           ),
         );
       case StockListViewMode.table:
-        return _StockTable(products: list, controller: widget.controller, onOpen: _open);
+        return _StockTable(products: products, controller: widget.controller, onOpen: _open);
     }
   }
 }
@@ -270,7 +310,7 @@ class _CompactTile extends StatelessWidget {
       title: Text(product.name, style: const TextStyle(fontWeight: FontWeight.w800)),
       subtitle: Text(product.categoryName, style: const TextStyle(color: Color(0xFF39FF6A), fontWeight: FontWeight.w700)),
       trailing: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 240),
+        constraints: const BoxConstraints(maxWidth: 230),
         child: Text(
           product.stockInitialized ? formatStockParts(product.totalAmount, product.packageSize, product.stockUnit) : 'Не пересчитано',
           textAlign: TextAlign.right,
@@ -290,12 +330,12 @@ class _DetailedTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final meta = controller.metaFor(product);
-    final e = ProductEconomics(product: product, meta: meta);
+    final economics = ProductEconomics(product: product, meta: meta);
     final mainPortion = meta.portions.isEmpty ? null : meta.portions.first;
     return Card(
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
         onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(14),
           child: Row(
@@ -309,19 +349,22 @@ class _DetailedTile extends StatelessWidget {
                   children: [
                     Text(product.name, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900)),
                     Text(product.categoryName, style: const TextStyle(color: Color(0xFF39FF6A), fontWeight: FontWeight.w700)),
-                    const SizedBox(height: 8),
-                    Text(product.stockInitialized ? formatStockParts(product.totalAmount, product.packageSize, product.stockUnit) : 'Остаток не введён', style: const TextStyle(fontWeight: FontWeight.w900)),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 7),
+                    Text(
+                      product.stockInitialized ? formatStockParts(product.totalAmount, product.packageSize, product.stockUnit) : 'Остаток не введён',
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                    const SizedBox(height: 7),
                     Wrap(
                       spacing: 16,
-                      runSpacing: 6,
+                      runSpacing: 5,
                       children: [
                         Text('Закупка: ${formatMoney(product.defaultCost)}'),
                         Text('Бутылка: ${meta.sellByBottle ? formatMoney(meta.bottleSalePrice) : '—'}'),
-                        Text('Маржа: ${_percent(e.bottleMarginPercent)}'),
+                        Text('Маржа: ${_percent(economics.bottleMarginPercent)}'),
                         if (mainPortion != null) Text('${mainPortion.amount} ${product.stockUnit.symbol}: ${formatMoney(mainPortion.price)}'),
-                        Text('Остаток по закупке: ${formatMoney(e.stockCost)}'),
-                        Text('Потенц. выручка: ${formatMoney(e.potentialBottleRevenue())}'),
+                        Text('Стоимость остатка: ${formatMoney(economics.stockCost)}'),
+                        Text('Потенц. выручка: ${formatMoney(economics.potentialBottleRevenue())}'),
                       ],
                     ),
                   ],
@@ -359,21 +402,21 @@ class _StockTable extends StatelessWidget {
               DataColumn(label: Text('Маржа')),
               DataColumn(label: Text('Стоимость остатка')),
             ],
-            rows: products.map((p) {
-              final meta = controller.metaFor(p);
-              final e = ProductEconomics(product: p, meta: meta);
+            rows: products.map((product) {
+              final meta = controller.metaFor(product);
+              final economics = ProductEconomics(product: product, meta: meta);
               final portion = meta.portions.isEmpty ? null : meta.portions.first;
               return DataRow(
-                onSelectChanged: (_) => onOpen(p),
+                onSelectChanged: (_) => onOpen(product),
                 cells: [
-                  DataCell(Text(p.name, style: const TextStyle(fontWeight: FontWeight.w800))),
-                  DataCell(Text(p.categoryName)),
-                  DataCell(Text(p.stockInitialized ? formatStockParts(p.totalAmount, p.packageSize, p.stockUnit) : '—')),
-                  DataCell(Text(formatMoney(p.defaultCost))),
+                  DataCell(Text(product.name, style: const TextStyle(fontWeight: FontWeight.w800))),
+                  DataCell(Text(product.categoryName)),
+                  DataCell(Text(product.stockInitialized ? formatStockParts(product.totalAmount, product.packageSize, product.stockUnit) : '—')),
+                  DataCell(Text(formatMoney(product.defaultCost))),
                   DataCell(Text(meta.sellByBottle ? formatMoney(meta.bottleSalePrice) : '—')),
                   DataCell(Text(portion == null ? '—' : '${portion.amount} / ${formatMoney(portion.price)}')),
-                  DataCell(Text(_percent(e.bottleMarginPercent))),
-                  DataCell(Text(formatMoney(e.stockCost))),
+                  DataCell(Text(_percent(economics.bottleMarginPercent))),
+                  DataCell(Text(formatMoney(economics.stockCost))),
                 ],
               );
             }).toList(growable: false),
@@ -393,9 +436,14 @@ class _Thumb extends StatelessWidget {
     return Container(
       width: size,
       height: size,
-      decoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(12)),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+      ),
       clipBehavior: Clip.antiAlias,
-      child: url == null ? const Icon(Icons.inventory_2_outlined) : Image.network(url!, fit: BoxFit.contain, errorBuilder: (_, __, ___) => const Icon(Icons.broken_image_outlined)),
+      child: url == null
+          ? const Icon(Icons.inventory_2_outlined)
+          : Image.network(url!, fit: BoxFit.contain, errorBuilder: (_, __, ___) => const Icon(Icons.broken_image_outlined)),
     );
   }
 }
