@@ -4,6 +4,7 @@ import 'data/offline_mutation_repository.dart';
 import 'data/remote_stock_service.dart';
 import 'data/remote_stock_v14_extension.dart';
 import 'data/v14_offline_repository.dart';
+import 'data/v14_schema_repository.dart';
 import 'models.dart';
 import 'persistent_offline_controller.dart';
 import 'security.dart';
@@ -14,16 +15,20 @@ class V14WarehouseController extends PersistentOfflineWarehouseController {
     RemoteStockService? v14Remote,
     OfflineMutationRepository? outbox,
     V14OfflineRepository? v14Offline,
+    V14SchemaRepository? schema,
   })  : _v14Remote = v14Remote ?? RemoteStockService(),
         _outbox = outbox ?? OfflineMutationRepository(),
-        _v14Offline = v14Offline ?? V14OfflineRepository();
+        _v14Offline = v14Offline ?? V14OfflineRepository(),
+        _schema = schema ?? V14SchemaRepository();
 
   final RemoteStockService _v14Remote;
   final OfflineMutationRepository _outbox;
   final V14OfflineRepository _v14Offline;
+  final V14SchemaRepository _schema;
 
   final Map<int, ProductV14Meta> _productMeta = {};
   List<CatalogAuditEntry> catalogAudit = const [];
+  List<Map<String, dynamic>> spotStocktakeHistory = const [];
   String? _v14Pin;
 
   ProductV14Meta metaFor(Product product) => _productMeta[product.id] ?? const ProductV14Meta();
@@ -38,6 +43,7 @@ class V14WarehouseController extends PersistentOfflineWarehouseController {
 
   @override
   Future<void> initialize() async {
+    await _schema.ensureSchema();
     await super.initialize();
     await _loadV14SnapshotBestEffort();
   }
@@ -234,6 +240,15 @@ class V14WarehouseController extends PersistentOfflineWarehouseController {
     final rawAudit = snapshot['catalog_audit'];
     if (rawAudit is List) {
       catalogAudit = rawAudit.whereType<Map>().map(CatalogAuditEntry.fromJson).toList(growable: false);
+    }
+
+    final rawOperations = snapshot['operations'];
+    if (rawOperations is List) {
+      spotStocktakeHistory = rawOperations
+          .whereType<Map>()
+          .where((x) => '${x['operation_type'] ?? ''}' == 'spot_stocktake')
+          .map((x) => x.map((key, value) => MapEntry('$key', value)))
+          .toList(growable: false);
     }
     notifyListeners();
   }
