@@ -6,7 +6,7 @@ import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_URL = "https://mvnxfouyoynqyjdpcblh.supabase.co/functions/v1/bali-stock-ios"
+DEFAULT_URL = "https://raw.githack.com/Nik13599/BALI-STOCK/main/ios-web/launch.html"
 
 
 def main() -> None:
