@@ -1,1 +1,67 @@
-x
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="BALI STOCK">
+  <meta name="theme-color" content="#07110c">
+  <title>BALI STOCK</title>
+  <style>
+    html,body{margin:0;min-height:100%;background:#07110c;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    main{min-height:100vh;display:grid;place-items:center;padding:32px 20px;box-sizing:border-box}
+    .box{width:min(440px,100%);background:#101c15;border:1px solid #294233;border-radius:20px;padding:22px;box-sizing:border-box}
+    .brand{color:#39ff6a;font-size:28px;font-weight:900;letter-spacing:.5px}
+    .muted{margin-top:10px;color:#9fb3a5;line-height:1.45}
+    .error{color:#ff8d94;word-break:break-word}
+    button{margin-top:16px;width:100%;border:0;border-radius:13px;padding:13px 16px;background:#39ff6a;color:#031408;font:inherit;font-weight:900}
+  </style>
+</head>
+<body>
+<main>
+  <div class="box">
+    <div class="brand">BALI STOCK</div>
+    <div id="status" class="muted">Загрузка приложения…</div>
+  </div>
+</main>
+<script>
+(async function () {
+  const source = 'https://mvnxfouyoynqyjdpcblh.supabase.co/functions/v1/bali-stock-ios';
+  const status = document.getElementById('status');
+  try {
+    const response = await fetch(source + '?launcher=1&ts=' + Date.now(), {
+      cache: 'no-store',
+      headers: { Accept: 'text/html,*/*' }
+    });
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    let html = await response.text();
+    if (!/^\s*<!doctype html>/i.test(html) || !html.includes('BALI STOCK')) {
+      throw new Error('Получен неверный формат приложения');
+    }
+
+    // Safari patch for the V14 spot-stocktake extra-residue validation.
+    html = html.replace(
+      "(!p.stock_unit==='pcs'&&e>=p.package_size)",
+      "(p.stock_unit!=='pcs'&&e>=p.package_size)"
+    );
+
+    // Supabase serves Edge Function HTML as text/plain. This launcher is itself
+    // served as text/html; it fetches the generated app as text and lets Safari
+    // parse that trusted document normally.
+    document.open();
+    document.write(html);
+    document.close();
+  } catch (error) {
+    const message = error && error.message ? error.message : String(error);
+    status.className = 'muted error';
+    status.textContent = 'Не удалось запустить BALI STOCK: ' + message;
+    const button = document.createElement('button');
+    button.textContent = 'Повторить';
+    button.onclick = function () { location.reload(); };
+    status.parentElement.appendChild(button);
+  }
+})();
+</script>
+</body>
+</html>
