@@ -73,6 +73,34 @@ class V14WarehouseController extends PersistentOfflineWarehouseController {
     await _loadV14SnapshotBestEffort();
   }
 
+  @override
+  Future<void> receiveDelivery(
+    List<DeliveryDraftLine> lines, {
+    String employee = '',
+    String? supplierId,
+    String? documentNumber,
+    String? comment,
+    String? attachmentUrl,
+    String? locationId,
+    Map<String, dynamic>? metadata,
+  }) async {
+    final withoutCost = lines.where((line) => line.unitCost == null).toList(growable: false);
+    if (withoutCost.isNotEmpty) {
+      final names = withoutCost.take(4).map((x) => x.product.name).join(', ');
+      throw ArgumentError('Закупочная цена обязательна для каждой позиции поставки: $names${withoutCost.length > 4 ? '…' : ''}');
+    }
+    await super.receiveDelivery(
+      lines,
+      employee: employee,
+      supplierId: supplierId,
+      documentNumber: documentNumber,
+      comment: comment,
+      attachmentUrl: attachmentUrl,
+      locationId: locationId,
+      metadata: metadata,
+    );
+  }
+
   Future<void> saveProductSales({
     required Product product,
     required String employee,
