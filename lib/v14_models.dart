@@ -76,6 +76,110 @@ class ProductV14Meta {
       };
 }
 
+class ProductV14CatalogEdit {
+  const ProductV14CatalogEdit({
+    required this.name,
+    required this.categoryName,
+    required this.categorySort,
+    required this.packageSize,
+    required this.stockUnit,
+    required this.minimumAmount,
+    required this.targetAmount,
+    required this.varianceRecheckAmount,
+    required this.meta,
+    this.barcode,
+  });
+
+  final String name;
+  final String categoryName;
+  final int categorySort;
+  final int packageSize;
+  final StockUnit stockUnit;
+  final int minimumAmount;
+  final int targetAmount;
+  final int varianceRecheckAmount;
+  final String? barcode;
+  final ProductV14Meta meta;
+
+  factory ProductV14CatalogEdit.fromProduct(
+    Product product,
+    ProductV14Meta meta, {
+    int categorySort = 0,
+  }) =>
+      ProductV14CatalogEdit(
+        name: product.name,
+        categoryName: product.categoryName,
+        categorySort: categorySort,
+        packageSize: product.packageSize,
+        stockUnit: product.stockUnit,
+        minimumAmount: product.minimumAmount,
+        targetAmount: product.targetAmount,
+        varianceRecheckAmount: product.varianceRecheckAmount,
+        barcode: product.barcode,
+        meta: meta,
+      );
+
+  ProductV14CatalogEdit copyWith({
+    String? name,
+    String? categoryName,
+    int? categorySort,
+    int? packageSize,
+    StockUnit? stockUnit,
+    int? minimumAmount,
+    int? targetAmount,
+    int? varianceRecheckAmount,
+    String? barcode,
+    bool clearBarcode = false,
+    ProductV14Meta? meta,
+  }) =>
+      ProductV14CatalogEdit(
+        name: name ?? this.name,
+        categoryName: categoryName ?? this.categoryName,
+        categorySort: categorySort ?? this.categorySort,
+        packageSize: packageSize ?? this.packageSize,
+        stockUnit: stockUnit ?? this.stockUnit,
+        minimumAmount: minimumAmount ?? this.minimumAmount,
+        targetAmount: targetAmount ?? this.targetAmount,
+        varianceRecheckAmount: varianceRecheckAmount ?? this.varianceRecheckAmount,
+        barcode: clearBarcode ? null : (barcode ?? this.barcode),
+        meta: meta ?? this.meta,
+      );
+
+  bool sameAs(Product product, ProductV14Meta originalMeta, {required int categorySort}) {
+    return name == product.name &&
+        categoryName == product.categoryName &&
+        this.categorySort == categorySort &&
+        packageSize == product.packageSize &&
+        stockUnit == product.stockUnit &&
+        minimumAmount == product.minimumAmount &&
+        targetAmount == product.targetAmount &&
+        varianceRecheckAmount == product.varianceRecheckAmount &&
+        (barcode ?? '') == (product.barcode ?? '') &&
+        _sameMeta(meta, originalMeta);
+  }
+
+  Map<String, dynamic> toPayload({required Product product, required String oldProductKey}) => {
+        'old_product_key': oldProductKey,
+        'name': name.trim(),
+        'category_name': categoryName.trim(),
+        'category_sort': categorySort,
+        'package_size': packageSize,
+        'stock_unit': stockUnit.dbValue,
+        'minimum_amount': minimumAmount,
+        'target_amount': targetAmount,
+        'barcode': barcode?.trim().isEmpty == true ? null : barcode?.trim(),
+        'default_cost': product.defaultCost,
+        'cost_currency': product.costCurrency,
+        'variance_recheck_amount': varianceRecheckAmount,
+        'active': product.active,
+        'sell_by_bottle': meta.sellByBottle,
+        'bottle_sale_price': meta.bottleSalePrice,
+        'portion_sale': meta.portionSale,
+        'portion_prices': meta.portions.map((x) => x.toJson()).toList(growable: false),
+        'image_path': meta.imagePath,
+      };
+}
+
 class CatalogAuditEntry {
   const CatalogAuditEntry({
     required this.id,
@@ -191,6 +295,20 @@ class ProductEconomics {
     if (!meta.portionSale || portion.amount <= 0 || !product.stockInitialized) return null;
     return product.totalAmount / portion.amount * portion.price;
   }
+}
+
+bool _sameMeta(ProductV14Meta a, ProductV14Meta b) {
+  if (a.sellByBottle != b.sellByBottle ||
+      a.bottleSalePrice != b.bottleSalePrice ||
+      a.portionSale != b.portionSale ||
+      a.imagePath != b.imagePath ||
+      a.portions.length != b.portions.length) {
+    return false;
+  }
+  for (var i = 0; i < a.portions.length; i++) {
+    if (a.portions[i].amount != b.portions[i].amount || a.portions[i].price != b.portions[i].price) return false;
+  }
+  return true;
 }
 
 int _asInt(Object? value, {int fallback = 0}) {
