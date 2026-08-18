@@ -15,6 +15,7 @@ class RemoteSyncRepository {
     final remoteDrafts = (snapshot['drafts'] as List?)?.whereType<Map>().toList(growable: false) ?? const [];
     final remoteSuppliers = (snapshot['suppliers'] as List?)?.whereType<Map>().toList(growable: false) ?? const [];
     final remoteLocations = (snapshot['locations'] as List?)?.whereType<Map>().toList(growable: false) ?? const [];
+    final priorNamesByRemoteKey = _priorNamesByRemoteKey(snapshot);
     final supplierNames = <String, String>{
       for (final s in remoteSuppliers) '${s['id'] ?? ''}': '${s['name'] ?? ''}',
     };
@@ -59,7 +60,14 @@ class RemoteSyncRepository {
         final whole = unit == StockUnit.piece ? quantity : quantity ~/ packageSize;
         final extra = unit == StockUnit.piece ? 0 : quantity % packageSize;
 
-        final existing = await txn.query('products', columns: ['id'], where: 'name = ? COLLATE NOCASE', whereArgs: [name], limit: 1);
+        var existing = await txn.query('products', columns: ['id'], where: 'name = ? COLLATE NOCASE', whereArgs: [name], limit: 1);
+        if (existing.isEmpty && remoteKey.isNotEmpty) {
+          for (final previousName in priorNamesByRemoteKey[remoteKey] ?? const <String>[]) {
+            existing = await txn.query('products', columns: ['id'], where: 'name = ? COLLATE NOCASE', whereArgs: [previousName], limit: 1);
+            if (existing.isNotEmpty) break;
+          }
+        }
+
         final values = <String, Object?>{
           'name': name,
           'category_id': categoryId,
@@ -234,6 +242,39 @@ class RemoteSyncRepository {
       filledCount: lines.where((line) => line.isFilled).length,
       lines: lines,
     );
+  }
+
+  static Map<String, List<String>> _priorNamesByRemoteKey(Map<String, dynamic> snapshot) {
+    final audits = (snapshot['catalog_audit'] as List?)?.whereType<Map>().toList(growable: false) ?? const [];
+    final previousKey = <String, String>{};
+    final nameByOldKey = <String, String>{};
+    for (final raw in audits) {
+      final before = raw['before_data'];
+      final after = raw['after_data'];
+      if (before is! Map || after is! Map) continue;
+      final oldKey = '${before['product_key'] ?? ''}'.trim();
+      final newKey = '${after['product_key'] ?? ''}'.trim();
+      final oldName = '${before['name'] ?? ''}'.trim();
+      if (oldKey.isEmpty || newKey.isEmpty || oldKey == newKey) continue;
+      previousKey.putIfAbsent(newKey, () => oldKey);
+      if (oldName.isNotEmpty) nameByOldKey[oldKey] = oldName;
+    }
+
+    final result = <String, List<String>>{};
+    for (final key in previousKey.keys) {
+      final names = <String>[];
+      final visited = <String>{};
+      var cursor = key;
+      while (visited.add(cursor)) {
+        final oldKey = previousKey[cursor];
+        if (oldKey == null) break;
+        final oldName = nameByOldKey[oldKey];
+        if (oldName != null && !names.contains(oldName)) names.add(oldName);
+        cursor = oldKey;
+      }
+      if (names.isNotEmpty) result[key] = names;
+    }
+    return result;
   }
 
   static int _asInt(Object? value, {int fallback = 0}) {
