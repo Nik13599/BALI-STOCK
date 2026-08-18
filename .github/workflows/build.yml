@@ -12,7 +12,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  analyze:
+  quality:
+    name: code-health-and-tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,9 +24,14 @@ jobs:
       - name: Generate platform wrappers
         run: flutter create . --project-name bali_stock --org com.bali.stock --platforms=android,ios,windows
       - run: flutter pub get
+      - name: Check duplicates, dead Dart files and whitespace
+        run: python tool/code_health_check.py --fail-on-orphans
       - run: flutter analyze
+      - run: flutter test
 
   android:
+    name: android-installer
+    needs: quality
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -34,7 +40,7 @@ jobs:
           channel: stable
           cache: true
       - run: flutter create . --project-name bali_stock --org com.bali.stock --platforms=android,ios,windows
-      - name: Ensure Android release internet and camera permissions
+      - name: Ensure Android release permissions
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -57,12 +63,19 @@ jobs:
       - run: flutter pub get
       - run: dart run flutter_launcher_icons
       - run: flutter build apk --release
+      - name: Prepare Android installer
+        run: |
+          mkdir -p dist/android
+          cp build/app/outputs/flutter-apk/app-release.apk dist/android/BALI-STOCK-Android-v14.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: BALI-STOCK-Android
-          path: build/app/outputs/flutter-apk/app-release.apk
+          name: BALI-STOCK-Android-Installer
+          path: dist/android/BALI-STOCK-Android-v14.apk
+          if-no-files-found: error
 
   windows:
+    name: windows-installer
+    needs: quality
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -75,45 +88,48 @@ jobs:
       - run: flutter pub get
       - run: dart run flutter_launcher_icons
       - run: flutter build windows --release
-      - name: Bundle Microsoft VC++ runtime for standalone launch
+      - name: Bundle Microsoft VC++ runtime
         shell: pwsh
         run: |
           $release = Resolve-Path 'build/windows/x64/runner/Release'
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          if (-not (Test-Path $vswhere)) {
-            throw "vswhere.exe not found"
-          }
+          if (-not (Test-Path $vswhere)) { throw "vswhere.exe not found" }
           $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-          if (-not $vs) {
-            throw "Visual Studio C++ tools not found"
-          }
+          if (-not $vs) { throw "Visual Studio C++ tools not found" }
           $redistRoot = Join-Path $vs 'VC\Redist\MSVC'
           $crt = Get-ChildItem $redistRoot -Directory | Sort-Object Name -Descending | ForEach-Object {
             $candidate = Join-Path $_.FullName 'x64\Microsoft.VC143.CRT'
             if (Test-Path $candidate) { $candidate }
           } | Select-Object -First 1
-          if (-not $crt) {
-            throw "Microsoft.VC143.CRT x64 redistributable directory not found"
-          }
+          if (-not $crt) { throw "Microsoft.VC143.CRT x64 redistributable directory not found" }
           Copy-Item (Join-Path $crt '*.dll') -Destination $release -Force
-          $required = @('msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')
-          foreach ($dll in $required) {
-            if (-not (Test-Path (Join-Path $release $dll))) {
-              throw "Required VC runtime DLL missing after copy: $dll"
-            }
+          foreach ($dll in @('msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')) {
+            if (-not (Test-Path (Join-Path $release $dll))) { throw "Required VC runtime DLL missing: $dll" }
           }
-          Set-Content -Path (Join-Path $release 'BALI-STOCK-START.txt') -Encoding UTF8 -Value @"
-          BALI STOCK
-          1. Распакуйте ВЕСЬ архив в отдельную папку.
-          2. Запускайте bali_stock.exe из этой папки.
-          3. Не переносите отдельно только EXE — рядом нужны DLL и папка data.
-          "@
+      - name: Install Inno Setup when missing
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup --yes --no-progress
+          }
+          if (-not (Test-Path $iscc)) { throw "Inno Setup compiler not found" }
+      - name: Build Windows setup EXE
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          & $iscc "/DMyAppVersion=0.14.0" "installer/windows/bali_stock.iss"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path 'dist/windows/BALI-STOCK-Windows-v14-Setup.exe')) { throw "Setup EXE was not created" }
       - uses: actions/upload-artifact@v4
         with:
-          name: BALI-STOCK-Windows
-          path: build/windows/x64/runner/Release/
+          name: BALI-STOCK-Windows-Installer
+          path: dist/windows/BALI-STOCK-Windows-v14-Setup.exe
+          if-no-files-found: error
 
   ios:
+    name: ios-native-unsigned
+    needs: quality
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -122,11 +138,12 @@ jobs:
           channel: stable
           cache: true
       - run: flutter create . --project-name bali_stock --org com.bali.stock --platforms=android,ios,windows
-      - name: Configure iOS camera, photos and ML Kit target
+      - name: Configure iOS camera, photos and deployment target
         run: |
           python - <<'PY'
           from pathlib import Path
           import plistlib
+          import re
 
           plist_path = Path('ios/Runner/Info.plist')
           with plist_path.open('rb') as f:
@@ -138,7 +155,6 @@ jobs:
 
           pbx = Path('ios/Runner.xcodeproj/project.pbxproj')
           text = pbx.read_text(encoding='utf-8')
-          import re
           text = re.sub(r'IPHONEOS_DEPLOYMENT_TARGET = [0-9.]+;', 'IPHONEOS_DEPLOYMENT_TARGET = 15.5;', text)
           pbx.write_text(text, encoding='utf-8')
 
@@ -154,7 +170,41 @@ jobs:
       - run: flutter pub get
       - run: dart run flutter_launcher_icons
       - run: flutter build ios --release --no-codesign
+      - name: Pack unsigned native iOS app
+        run: |
+          mkdir -p dist/ios
+          ditto -c -k --sequesterRsrc --keepParent build/ios/iphoneos/Runner.app dist/ios/BALI-STOCK-iOS-v14-unsigned.app.zip
       - uses: actions/upload-artifact@v4
         with:
           name: BALI-STOCK-iOS-unsigned
-          path: build/ios/iphoneos/Runner.app/
+          path: dist/ios/BALI-STOCK-iOS-v14-unsigned.app.zip
+          if-no-files-found: error
+
+  ios_webclip:
+    name: iphone-mobileconfig
+    needs: quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate iPhone installation profile
+        run: python tool/generate_mobileconfig.py
+      - name: Validate configuration profile
+        run: |
+          python - <<'PY'
+          import plistlib
+          from pathlib import Path
+          path = Path('dist/ios/BALI-STOCK-iPhone.mobileconfig')
+          with path.open('rb') as f:
+              profile = plistlib.load(f)
+          assert profile['PayloadType'] == 'Configuration'
+          clip = profile['PayloadContent'][0]
+          assert clip['PayloadType'] == 'com.apple.webClip.managed'
+          assert clip['URL'].startswith('https://')
+          assert clip['Icon']
+          print('mobileconfig OK:', clip['URL'])
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BALI-STOCK-iPhone-WebClip
+          path: dist/ios/BALI-STOCK-iPhone.mobileconfig
+          if-no-files-found: error
