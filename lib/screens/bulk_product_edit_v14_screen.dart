@@ -290,7 +290,9 @@ class _QuickMetaDialogState extends State<_QuickMetaDialog> {
   @override
   void dispose() {
     bottlePrice.dispose();
-    for (final row in portions) row.dispose();
+    for (final row in portions) {
+      row.dispose();
+    }
     super.dispose();
   }
 
@@ -384,7 +386,9 @@ bool _sameMeta(ProductV14Meta a, ProductV14Meta b) {
       a.bottleSalePrice != b.bottleSalePrice ||
       a.portionSale != b.portionSale ||
       a.imagePath != b.imagePath ||
-      a.portions.length != b.portions.length) return false;
+      a.portions.length != b.portions.length) {
+    return false;
+  }
   for (var i = 0; i < a.portions.length; i++) {
     if (a.portions[i].amount != b.portions[i].amount || a.portions[i].price != b.portions[i].price) return false;
   }
