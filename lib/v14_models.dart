@@ -171,7 +171,7 @@ class ProductV14CatalogEdit {
         'default_cost': product.defaultCost,
         'cost_currency': product.costCurrency,
         'variance_recheck_amount': varianceRecheckAmount,
-        'active': product.active,
+        'active': true,
         'sell_by_bottle': meta.sellByBottle,
         'bottle_sale_price': meta.bottleSalePrice,
         'portion_sale': meta.portionSale,
