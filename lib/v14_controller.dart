@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'data/offline_mutation_repository.dart';
 import 'data/remote_stock_service.dart';
 import 'data/remote_stock_v14_extension.dart';
+import 'data/v14_meta_cache_repository.dart';
 import 'data/v14_offline_repository.dart';
 import 'data/v14_schema_repository.dart';
 import 'models.dart';
@@ -16,15 +17,18 @@ class V14WarehouseController extends PersistentOfflineWarehouseController {
     OfflineMutationRepository? outbox,
     V14OfflineRepository? v14Offline,
     V14SchemaRepository? schema,
+    V14MetaCacheRepository? v14Cache,
   })  : _v14Remote = v14Remote ?? RemoteStockService(),
         _outbox = outbox ?? OfflineMutationRepository(),
         _v14Offline = v14Offline ?? V14OfflineRepository(),
-        _schema = schema ?? V14SchemaRepository();
+        _schema = schema ?? V14SchemaRepository(),
+        _v14Cache = v14Cache ?? V14MetaCacheRepository();
 
   final RemoteStockService _v14Remote;
   final OfflineMutationRepository _outbox;
   final V14OfflineRepository _v14Offline;
   final V14SchemaRepository _schema;
+  final V14MetaCacheRepository _v14Cache;
 
   final Map<int, ProductV14Meta> _productMeta = {};
   List<CatalogAuditEntry> catalogAudit = const [];
@@ -44,7 +48,12 @@ class V14WarehouseController extends PersistentOfflineWarehouseController {
   @override
   Future<void> initialize() async {
     await _schema.ensureSchema();
+    await _v14Cache.ensureSchema();
     await super.initialize();
+
+    final cached = await _v14Cache.loadSnapshot();
+    if (cached != null) _applyV14Snapshot(cached);
+    await _applyPendingV14Meta();
     await _loadV14SnapshotBestEffort();
   }
 
@@ -52,6 +61,7 @@ class V14WarehouseController extends PersistentOfflineWarehouseController {
   Future<void> refresh() async {
     await super.refresh();
     await _loadV14SnapshotBestEffort();
+    if (pendingSyncCount == 0) await _v14Cache.clearPending();
   }
 
   @override
@@ -108,6 +118,7 @@ class V14WarehouseController extends PersistentOfflineWarehouseController {
   }) async {
     _requireV14Pin();
     _productMeta[product.id] = meta;
+    await _v14Cache.savePending(productKeyFor(product), meta);
     notifyListeners();
 
     await _outbox.enqueue('product_meta_batch', {
@@ -139,6 +150,7 @@ class V14WarehouseController extends PersistentOfflineWarehouseController {
     if (changes.isEmpty) return;
     for (final entry in changes.entries) {
       _productMeta[entry.key.id] = entry.value;
+      await _v14Cache.savePending(productKeyFor(entry.key), entry.value);
     }
     notifyListeners();
 
@@ -182,7 +194,12 @@ class V14WarehouseController extends PersistentOfflineWarehouseController {
       fileName: fileName,
       mimeType: mimeType,
     );
-    _applyV14Snapshot(response['snapshot']);
+    final raw = response['snapshot'];
+    if (raw is Map) {
+      final snapshot = raw.map((key, value) => MapEntry('$key', value));
+      _applyV14Snapshot(snapshot);
+      await _v14Cache.saveSnapshot(snapshot);
+    }
     await super.refresh();
   }
 
@@ -243,10 +260,21 @@ class V14WarehouseController extends PersistentOfflineWarehouseController {
     try {
       final snapshot = await _v14Remote.fetchSnapshot();
       _applyV14Snapshot(snapshot);
+      await _v14Cache.saveSnapshot(snapshot);
+      if (pendingSyncCount == 0) await _v14Cache.clearPending();
     } catch (_) {
-      // The base controller remains authoritative for offline stock quantities.
-      // Keep the last V14 metadata in memory while connectivity is unavailable.
+      await _applyPendingV14Meta();
     }
+  }
+
+  Future<void> _applyPendingV14Meta() async {
+    final pending = await _v14Cache.loadPending();
+    if (pending.isEmpty) return;
+    for (final product in products) {
+      final meta = pending[productKeyFor(product)];
+      if (meta != null) _productMeta[product.id] = meta;
+    }
+    notifyListeners();
   }
 
   void _applyV14Snapshot(Object? rawSnapshot) {
