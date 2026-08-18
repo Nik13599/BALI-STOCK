@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="BALI STOCK">
+  <meta name="theme-color" content="#07110c">
+  <title>BALI STOCK</title>
+  <style>
+    html,body{margin:0;min-height:100%;background:#07110c;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    main{min-height:100vh;display:grid;place-items:center;padding:32px 20px;box-sizing:border-box}
+    .box{width:min(440px,100%);background:#101c15;border:1px solid #294233;border-radius:20px;padding:22px;box-sizing:border-box}
+    .brand{color:#39ff6a;font-size:28px;font-weight:900;letter-spacing:.5px}
+    .muted{margin-top:10px;color:#9fb3a5;line-height:1.45}
+    .error{color:#ff8d94;word-break:break-word}
+    button{margin-top:16px;width:100%;border:0;border-radius:13px;padding:13px 16px;background:#39ff6a;color:#031408;font:inherit;font-weight:900}
+  </style>
+</head>
+<body>
+<main>
+  <div class="box">
+    <div class="brand">BALI STOCK</div>
+    <div id="status" class="muted">Подключение к общей базе…</div>
+  </div>
+</main>
+<script>
+(async function () {
+  const source = 'https://mvnxfouyoynqyjdpcblh.supabase.co/functions/v1/bali-stock-ios-runtime';
+  const status = document.getElementById('status');
+  try {
+    const response = await fetch(source + '?launcher=3&ts=' + Date.now(), {
+      cache: 'no-store',
+      headers: { Accept: 'text/plain,*/*' }
+    });
+    if (!response.ok) throw new Error('Runtime HTTP ' + response.status);
+    let html = await response.text();
+    if (!/^\s*<!doctype html>/i.test(html) || !html.includes('BALI STOCK')) {
+      throw new Error('Runtime вернул неверный формат приложения');
+    }
+    if (/return,[A-Za-z_$][A-Za-z0-9_$]*=/.test(html)) {
+      throw new Error('Проверка Safari не пройдена');
+    }
+    if (!html.includes('async function snapshot') || !html.includes('baseSnapshot=snapshot')) {
+      throw new Error('Не загружен модуль синхронизации');
+    }
+
+    const scanSafety = `<script>
+(function(){
+  function launchScanner(){
+    if(typeof window.startProductCodeScanner==='function'){
+      window.startProductCodeScanner();
+      return;
+    }
+    if(typeof window.enterProductCodeManually==='function'){
+      window.enterProductCodeManually();
+      return;
+    }
+    if(typeof toast==='function') toast('Сканер ещё загружается. Повторите через секунду.',true);
+  }
+  function ensureScanButton(){
+    var existing=document.getElementById('homeScan');
+    if(existing){existing.textContent='Сканировать код';return;}
+    var homeTab=document.querySelector('#tabs button[data-tab="home"]');
+    if(homeTab&&!homeTab.classList.contains('active'))return;
+    var target=document.querySelector('#app .section')||document.getElementById('app');
+    if(!target||document.getElementById('baliScanShortcut'))return;
+    var wrap=document.createElement('div');
+    wrap.id='baliScanShortcut';
+    wrap.style='margin:0 0 14px 0';
+    var btn=document.createElement('button');
+    btn.type='button';
+    btn.textContent='Сканировать код';
+    btn.style='width:100%;font-size:17px;padding:14px 16px';
+    btn.onclick=launchScanner;
+    wrap.appendChild(btn);
+    target.insertBefore(wrap,target.firstChild);
+  }
+  var observer=new MutationObserver(function(){setTimeout(ensureScanButton,0)});
+  observer.observe(document.documentElement,{childList:true,subtree:true});
+  document.addEventListener('DOMContentLoaded',ensureScanButton);
+  setTimeout(ensureScanButton,200);
+  setTimeout(ensureScanButton,1000);
+})();
+<\/script>`;
+    html = html.replace('</body>', scanSafety + '\n</body>');
+
+    document.open();
+    document.write(html);
+    document.close();
+  } catch (error) {
+    const message = error && error.message ? error.message : String(error);
+    status.className = 'muted error';
+    status.textContent = 'Не удалось запустить BALI STOCK: ' + message;
+    const button = document.createElement('button');
+    button.textContent = 'Повторить';
+    button.onclick = function () { location.reload(); };
+    status.parentElement.appendChild(button);
+  }
+})();
+</script>
+</body>
+</html>
