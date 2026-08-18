@@ -2,19 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
-import 'controller.dart';
-import 'screens/control_screen.dart';
+import 'screens/control_hub_v14_screen.dart';
 import 'screens/delivery_screen.dart';
-import 'screens/history_overview_screen.dart';
-import 'screens/stock_overview_screen.dart';
+import 'screens/home_v14_screen.dart';
+import 'screens/purchase_screen.dart';
+import 'screens/stock_v14_screen.dart';
 import 'screens/stocktake_v2_screen.dart';
+import 'v14_controller.dart';
 import 'widgets/common.dart';
 import 'widgets/pin_value_dialog.dart';
 
 class BaliStockApp extends StatelessWidget {
   const BaliStockApp({super.key, required this.controller});
 
-  final WarehouseController controller;
+  final V14WarehouseController controller;
 
   @override
   Widget build(BuildContext context) {
@@ -44,7 +45,7 @@ class BaliStockApp extends StatelessWidget {
 class BaliStockShell extends StatefulWidget {
   const BaliStockShell({super.key, required this.controller});
 
-  final WarehouseController controller;
+  final V14WarehouseController controller;
 
   @override
   State<BaliStockShell> createState() => _BaliStockShellState();
@@ -54,10 +55,11 @@ class _BaliStockShellState extends State<BaliStockShell> with WidgetsBindingObse
   int _selectedIndex = 0;
 
   static const _mobileDestinations = <NavigationDestination>[
+    NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'Главная'),
     NavigationDestination(icon: Icon(Icons.inventory_2_outlined), selectedIcon: Icon(Icons.inventory_2), label: 'Склад'),
     NavigationDestination(icon: Icon(Icons.local_shipping_outlined), selectedIcon: Icon(Icons.local_shipping), label: 'Поставка'),
     NavigationDestination(icon: Icon(Icons.fact_check_outlined), selectedIcon: Icon(Icons.fact_check), label: 'Переучёт'),
-    NavigationDestination(icon: Icon(Icons.history), selectedIcon: Icon(Icons.history_toggle_off), label: 'История'),
+    NavigationDestination(icon: Icon(Icons.shopping_cart_outlined), selectedIcon: Icon(Icons.shopping_cart), label: 'Закупки'),
     NavigationDestination(icon: Icon(Icons.tune_outlined), selectedIcon: Icon(Icons.tune), label: 'Контроль'),
   ];
 
@@ -75,14 +77,12 @@ class _BaliStockShellState extends State<BaliStockShell> with WidgetsBindingObse
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      widget.controller.onAppResumed();
-    }
+    if (state == AppLifecycleState.resumed) widget.controller.onAppResumed();
   }
 
   Future<void> _select(int index) async {
     if (index == _selectedIndex) return;
-    if (index == 1 || index == 2) {
+    if (index == 2 || index == 3) {
       final pin = await showOperationPinValueDialog(context);
       if (!mounted || pin == null) return;
       try {
@@ -99,8 +99,10 @@ class _BaliStockShellState extends State<BaliStockShell> with WidgetsBindingObse
   Widget _page() {
     switch (_selectedIndex) {
       case 1:
-        return DeliveryScreen(controller: widget.controller);
+        return StockV14Screen(controller: widget.controller);
       case 2:
+        return DeliveryScreen(controller: widget.controller);
+      case 3:
         return StocktakeV2Screen(
           controller: widget.controller,
           onCompleted: () {
@@ -108,13 +110,13 @@ class _BaliStockShellState extends State<BaliStockShell> with WidgetsBindingObse
             setState(() => _selectedIndex = 0);
           },
         );
-      case 3:
-        return HistoryOverviewScreen(controller: widget.controller);
       case 4:
-        return ControlScreen(controller: widget.controller);
+        return PurchaseScreen(controller: widget.controller);
+      case 5:
+        return ControlHubV14Screen(controller: widget.controller);
       case 0:
       default:
-        return StockOverviewScreen(controller: widget.controller);
+        return HomeV14Screen(controller: widget.controller);
     }
   }
 
@@ -125,13 +127,16 @@ class _BaliStockShellState extends State<BaliStockShell> with WidgetsBindingObse
         final warning = widget.controller.syncWarning?.trim();
         final online = widget.controller.sharedOnline;
         final hasWarning = warning != null && warning.isNotEmpty;
+        final pending = widget.controller.pendingSyncCount;
         final text = hasWarning
             ? warning
-            : online
-                ? 'Синхронизировано с общей базой'
-                : 'Офлайн — склад доступен локально';
-        final color = hasWarning || !online ? const Color(0xFFFFCB5C) : const Color(0xFF39FF6A);
-        final icon = hasWarning || !online ? Icons.cloud_off_outlined : Icons.cloud_done_outlined;
+            : pending > 0
+                ? 'Ожидает синхронизации: $pending'
+                : online
+                    ? 'Синхронизировано с общей базой'
+                    : 'Офлайн — склад доступен локально';
+        final color = hasWarning || !online || pending > 0 ? const Color(0xFFFFCB5C) : const Color(0xFF39FF6A);
+        final icon = hasWarning || !online ? Icons.cloud_off_outlined : pending > 0 ? Icons.cloud_upload_outlined : Icons.cloud_done_outlined;
 
         return Column(
           children: [
@@ -184,10 +189,11 @@ class _BaliStockShellState extends State<BaliStockShell> with WidgetsBindingObse
                       child: _BrandMark(),
                     ),
                     destinations: const [
+                      NavigationRailDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: Text('Главная')),
                       NavigationRailDestination(icon: Icon(Icons.inventory_2_outlined), selectedIcon: Icon(Icons.inventory_2), label: Text('Склад')),
                       NavigationRailDestination(icon: Icon(Icons.local_shipping_outlined), selectedIcon: Icon(Icons.local_shipping), label: Text('Поставка')),
                       NavigationRailDestination(icon: Icon(Icons.fact_check_outlined), selectedIcon: Icon(Icons.fact_check), label: Text('Переучёт')),
-                      NavigationRailDestination(icon: Icon(Icons.history), selectedIcon: Icon(Icons.history_toggle_off), label: Text('История')),
+                      NavigationRailDestination(icon: Icon(Icons.shopping_cart_outlined), selectedIcon: Icon(Icons.shopping_cart), label: Text('Закупки')),
                       NavigationRailDestination(icon: Icon(Icons.tune_outlined), selectedIcon: Icon(Icons.tune), label: Text('Контроль')),
                     ],
                   ),
