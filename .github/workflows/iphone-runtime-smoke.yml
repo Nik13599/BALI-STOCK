@@ -1,0 +1,82 @@
+name: iPhone Runtime Smoke
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+concurrency:
+  group: bali-stock-iphone-runtime-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  runtime-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch production iPhone runtime
+        run: |
+          curl --fail --silent --show-error \
+            "https://mvnxfouyoynqyjdpcblh.supabase.co/functions/v1/bali-stock-ios-runtime?ci=${GITHUB_RUN_ID}" \
+            -o /tmp/bali-stock-ios-runtime.html
+          test -s /tmp/bali-stock-ios-runtime.html
+          grep -qi '^<!doctype html>' /tmp/bali-stock-ios-runtime.html
+      - name: Validate runtime contract
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          html = Path('/tmp/bali-stock-ios-runtime.html').read_text(encoding='utf-8')
+          legacy = re.findall(r'return,[A-Za-z_$][A-Za-z0-9_$]*=', html)
+          if legacy:
+              raise SystemExit(f'Legacy Safari syntax remains: {legacy[:5]}')
+          if 'async function snapshot' not in html:
+              raise SystemExit('snapshot() is missing')
+          if 'baseSnapshot=snapshot' not in html:
+              raise SystemExit('V14 snapshot binding is missing')
+
+          match = re.search(r"nav\.innerHTML='<button data-tab=\"home\" class=\"active\">[\s\S]*?</button>';", html)
+          if not match:
+              raise SystemExit('V14 runtime navigation not found')
+          nav = match.group(0)
+          labels = re.findall(r'</b>([^<]+)</button>', nav)
+          expected = ['Главная', 'Склад', 'Переучёт', 'Закупки', 'Поставка', 'Настройки']
+          if labels != expected:
+              raise SystemExit(f'Navigation mismatch: {labels!r}')
+          if 'data-tab="history"' in nav:
+              raise SystemExit('History must not be a primary tab')
+          if '<svg' not in nav:
+              raise SystemExit('Custom SVG navigation icons are missing')
+
+          scripts = re.findall(r'<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)</script>', html, flags=re.I)
+          if len(scripts) < 3:
+              raise SystemExit(f'Expected multiple inline scripts, got {len(scripts)}')
+          for index, script in enumerate(scripts):
+              Path(f'/tmp/bali-runtime-inline-{index}.js').write_text(script, encoding='utf-8')
+          print(f'Runtime contract OK; inline scripts={len(scripts)}')
+          PY
+      - name: Parse every inline JavaScript block
+        run: |
+          for file in /tmp/bali-runtime-inline-*.js; do
+            echo "Checking $file"
+            node --check "$file"
+          done
+      - name: Validate production runtime health endpoint
+        run: |
+          curl --fail --silent --show-error \
+            "https://mvnxfouyoynqyjdpcblh.supabase.co/functions/v1/bali-stock-ios-runtime?health=1&ci=${GITHUB_RUN_ID}" \
+            -o /tmp/bali-runtime-health.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          data = json.loads(Path('/tmp/bali-runtime-health.json').read_text(encoding='utf-8'))
+          assert data['ok'] is True, data
+          assert data['remaining_legacy_return_comma'] == 0, data
+          assert data['snapshot_found'] is True, data
+          assert data['snapshot_before_v14'] is True, data
+          assert data['history_in_runtime_nav'] is False, data
+          print('Production iPhone runtime health OK')
+          PY
