@@ -9,6 +9,7 @@ import 'screens/purchase_screen.dart';
 import 'screens/stock_v14_screen.dart';
 import 'screens/stocktake_v2_screen.dart';
 import 'v14_controller.dart';
+import 'widgets/bali_nav_icon.dart';
 import 'widgets/common.dart';
 import 'widgets/pin_value_dialog.dart';
 
@@ -55,12 +56,36 @@ class _BaliStockShellState extends State<BaliStockShell> with WidgetsBindingObse
   int _selectedIndex = 0;
 
   static const _mobileDestinations = <NavigationDestination>[
-    NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'Главная'),
-    NavigationDestination(icon: Icon(Icons.inventory_2_outlined), selectedIcon: Icon(Icons.inventory_2), label: 'Склад'),
-    NavigationDestination(icon: Icon(Icons.local_shipping_outlined), selectedIcon: Icon(Icons.local_shipping), label: 'Поставка'),
-    NavigationDestination(icon: Icon(Icons.fact_check_outlined), selectedIcon: Icon(Icons.fact_check), label: 'Переучёт'),
-    NavigationDestination(icon: Icon(Icons.shopping_cart_outlined), selectedIcon: Icon(Icons.shopping_cart), label: 'Закупки'),
-    NavigationDestination(icon: Icon(Icons.tune_outlined), selectedIcon: Icon(Icons.tune), label: 'Контроль'),
+    NavigationDestination(
+      icon: BaliNavIcon(kind: BaliNavIconKind.home),
+      selectedIcon: BaliNavIcon(kind: BaliNavIconKind.home, active: true),
+      label: 'Главная',
+    ),
+    NavigationDestination(
+      icon: BaliNavIcon(kind: BaliNavIconKind.stock),
+      selectedIcon: BaliNavIcon(kind: BaliNavIconKind.stock, active: true),
+      label: 'Склад',
+    ),
+    NavigationDestination(
+      icon: BaliNavIcon(kind: BaliNavIconKind.stocktake),
+      selectedIcon: BaliNavIcon(kind: BaliNavIconKind.stocktake, active: true),
+      label: 'Переучёт',
+    ),
+    NavigationDestination(
+      icon: BaliNavIcon(kind: BaliNavIconKind.purchases),
+      selectedIcon: BaliNavIcon(kind: BaliNavIconKind.purchases, active: true),
+      label: 'Закупки',
+    ),
+    NavigationDestination(
+      icon: BaliNavIcon(kind: BaliNavIconKind.delivery),
+      selectedIcon: BaliNavIcon(kind: BaliNavIconKind.delivery, active: true),
+      label: 'Поставка',
+    ),
+    NavigationDestination(
+      icon: BaliNavIcon(kind: BaliNavIconKind.settings),
+      selectedIcon: BaliNavIcon(kind: BaliNavIconKind.settings, active: true),
+      label: 'Настройки',
+    ),
   ];
 
   @override
@@ -82,7 +107,9 @@ class _BaliStockShellState extends State<BaliStockShell> with WidgetsBindingObse
 
   Future<void> _select(int index) async {
     if (index == _selectedIndex) return;
-    if (index == 2 || index == 3) {
+    // Full stocktake and delivery change the shared warehouse balance and therefore
+    // require the operation PIN before the section opens.
+    if (index == 2 || index == 4) {
       final pin = await showOperationPinValueDialog(context);
       if (!mounted || pin == null) return;
       try {
@@ -101,8 +128,6 @@ class _BaliStockShellState extends State<BaliStockShell> with WidgetsBindingObse
       case 1:
         return StockV14Screen(controller: widget.controller);
       case 2:
-        return DeliveryScreen(controller: widget.controller);
-      case 3:
         return StocktakeV2Screen(
           controller: widget.controller,
           onCompleted: () {
@@ -110,8 +135,10 @@ class _BaliStockShellState extends State<BaliStockShell> with WidgetsBindingObse
             setState(() => _selectedIndex = 0);
           },
         );
-      case 4:
+      case 3:
         return PurchaseScreen(controller: widget.controller);
+      case 4:
+        return DeliveryScreen(controller: widget.controller);
       case 5:
         return ControlHubV14Screen(controller: widget.controller);
       case 0:
@@ -136,7 +163,6 @@ class _BaliStockShellState extends State<BaliStockShell> with WidgetsBindingObse
                     ? 'Синхронизировано с общей базой'
                     : 'Офлайн — склад доступен локально';
         final color = hasWarning || !online || pending > 0 ? const Color(0xFFFFCB5C) : const Color(0xFF39FF6A);
-        final icon = hasWarning || !online ? Icons.cloud_off_outlined : pending > 0 ? Icons.cloud_upload_outlined : Icons.cloud_done_outlined;
 
         return Column(
           children: [
@@ -148,7 +174,7 @@ class _BaliStockShellState extends State<BaliStockShell> with WidgetsBindingObse
                 color: const Color(0xFF111713),
                 child: Row(
                   children: [
-                    Icon(icon, size: 16, color: color),
+                    BaliNavIcon(kind: BaliNavIconKind.sync, active: online && !hasWarning && pending == 0, size: 16),
                     const SizedBox(width: 7),
                     Expanded(
                       child: Text(
@@ -189,12 +215,36 @@ class _BaliStockShellState extends State<BaliStockShell> with WidgetsBindingObse
                       child: _BrandMark(),
                     ),
                     destinations: const [
-                      NavigationRailDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: Text('Главная')),
-                      NavigationRailDestination(icon: Icon(Icons.inventory_2_outlined), selectedIcon: Icon(Icons.inventory_2), label: Text('Склад')),
-                      NavigationRailDestination(icon: Icon(Icons.local_shipping_outlined), selectedIcon: Icon(Icons.local_shipping), label: Text('Поставка')),
-                      NavigationRailDestination(icon: Icon(Icons.fact_check_outlined), selectedIcon: Icon(Icons.fact_check), label: Text('Переучёт')),
-                      NavigationRailDestination(icon: Icon(Icons.shopping_cart_outlined), selectedIcon: Icon(Icons.shopping_cart), label: Text('Закупки')),
-                      NavigationRailDestination(icon: Icon(Icons.tune_outlined), selectedIcon: Icon(Icons.tune), label: Text('Контроль')),
+                      NavigationRailDestination(
+                        icon: BaliNavIcon(kind: BaliNavIconKind.home),
+                        selectedIcon: BaliNavIcon(kind: BaliNavIconKind.home, active: true),
+                        label: Text('Главная'),
+                      ),
+                      NavigationRailDestination(
+                        icon: BaliNavIcon(kind: BaliNavIconKind.stock),
+                        selectedIcon: BaliNavIcon(kind: BaliNavIconKind.stock, active: true),
+                        label: Text('Склад'),
+                      ),
+                      NavigationRailDestination(
+                        icon: BaliNavIcon(kind: BaliNavIconKind.stocktake),
+                        selectedIcon: BaliNavIcon(kind: BaliNavIconKind.stocktake, active: true),
+                        label: Text('Переучёт'),
+                      ),
+                      NavigationRailDestination(
+                        icon: BaliNavIcon(kind: BaliNavIconKind.purchases),
+                        selectedIcon: BaliNavIcon(kind: BaliNavIconKind.purchases, active: true),
+                        label: Text('Закупки'),
+                      ),
+                      NavigationRailDestination(
+                        icon: BaliNavIcon(kind: BaliNavIconKind.delivery),
+                        selectedIcon: BaliNavIcon(kind: BaliNavIconKind.delivery, active: true),
+                        label: Text('Поставка'),
+                      ),
+                      NavigationRailDestination(
+                        icon: BaliNavIcon(kind: BaliNavIconKind.settings),
+                        selectedIcon: BaliNavIcon(kind: BaliNavIconKind.settings, active: true),
+                        label: Text('Настройки'),
+                      ),
                     ],
                   ),
                 ),
