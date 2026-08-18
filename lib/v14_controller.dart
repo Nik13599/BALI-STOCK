@@ -40,6 +40,13 @@ class V14WarehouseController extends PersistentOfflineWarehouseController {
   String productKeyFor(Product product) =>
       _v14Remote.productKey(name: product.name, unit: product.stockUnit, packageSize: product.packageSize);
 
+  int categorySortFor(Product product) {
+    for (final item in categories) {
+      if (item.id == product.categoryId || item.name.toLowerCase() == product.categoryName.toLowerCase()) return item.sortOrder;
+    }
+    return 0;
+  }
+
   List<CatalogAuditEntry> auditFor(Product product) {
     final key = productKeyFor(product);
     return catalogAudit.where((x) => x.productKey == key).toList(growable: false);
@@ -170,6 +177,41 @@ class V14WarehouseController extends PersistentOfflineWarehouseController {
                 'portion_prices': entry.value.portions.map((x) => x.toJson()).toList(growable: false),
                 'image_path': entry.value.imagePath,
               })
+          .toList(growable: false),
+    });
+    await refresh();
+  }
+
+  Future<void> saveProductCatalogBatch({
+    required String employee,
+    required Map<Product, ProductV14CatalogEdit> changes,
+  }) async {
+    _requireV14Pin();
+    if (changes.isEmpty) return;
+    final actor = employee.trim();
+    if (actor.isEmpty) throw ArgumentError('Укажите ФИО сотрудника');
+
+    final normalizedNames = <String>{};
+    for (final entry in changes.entries) {
+      final edit = entry.value;
+      if (edit.name.trim().isEmpty) throw ArgumentError('Название товара не может быть пустым');
+      if (edit.categoryName.trim().isEmpty) throw ArgumentError('Категория не может быть пустой');
+      if (edit.packageSize <= 0) throw ArgumentError('Размер упаковки должен быть больше нуля');
+      if (edit.minimumAmount < 0 || edit.targetAmount < 0 || edit.varianceRecheckAmount < 0) {
+        throw ArgumentError('Минимум, цель и порог перепроверки не могут быть отрицательными');
+      }
+      final identity = '${edit.name.trim().toLowerCase()}|${edit.stockUnit.dbValue}|${edit.packageSize}';
+      if (!normalizedNames.add(identity)) throw ArgumentError('В пакете есть дублирующиеся SKU: ${edit.name}');
+      _productMeta[entry.key.id] = edit.meta;
+      await _v14Cache.savePending(productKeyFor(entry.key), edit.meta);
+    }
+    notifyListeners();
+
+    await _outbox.enqueue('catalog_product_batch', {
+      'action': 'catalog_product_batch',
+      'employee': actor,
+      'items': changes.entries
+          .map((entry) => entry.value.toPayload(product: entry.key, oldProductKey: productKeyFor(entry.key)))
           .toList(growable: false),
     });
     await refresh();
