@@ -16,42 +16,65 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validate iPhone launcher and compact product card
+      - name: Validate V15 iPhone launcher and UI modules
         run: |
           python3 - <<'PY'
           from pathlib import Path
           import re
 
-          source = Path('ios-web/launch-v14-3.html').read_text(encoding='utf-8')
-          required = [
-              '__BALI_V14_COMPACT_PRODUCT_CARD__',
-              'window.v14ShowProduct=compact',
-              'ПЕРЕУЧЕСТЬ ТОВАР',
-              '<summary>Экономика</summary>',
-              '<summary>История карточки</summary>',
-              '@media(max-width:520px)',
+          launcher = Path('ios-web/launch-v15.html').read_text(encoding='utf-8')
+          ui = Path('ios-web/v15-ui.js').read_text(encoding='utf-8')
+          delivery = Path('ios-web/v15-delivery-link.js').read_text(encoding='utf-8')
+          required_launcher = [
+              'bali-stock-ios-runtime',
+              'v15-ui.js',
+              'v15-delivery-link.js',
+              'async function snapshot',
+              'baseSnapshot=snapshot',
           ]
-          missing = [item for item in required if item not in source]
+          missing = [item for item in required_launcher if item not in launcher]
           if missing:
-              raise SystemExit(f'Compact product-card launcher contract missing: {missing!r}')
+              raise SystemExit(f'V15 launcher contract missing: {missing!r}')
 
-          outer = re.findall(r'<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)</script>', source, flags=re.I)
-          if not outer:
-              raise SystemExit('Launcher inline JavaScript not found')
-          for index, script in enumerate(outer):
-              Path(f'/tmp/bali-launcher-outer-{index}.js').write_text(script, encoding='utf-8')
+          required_ui = [
+              '__BALI_STOCK_V15_UI__',
+              'Поставщик не назначен',
+              'Настройки товара',
+              'Продажи и цены',
+              'Ввести нового поставщика',
+              'Категории → товары по алфавиту',
+              'Нужно заказать',
+              'Все товары',
+              'Заявки',
+              'Накладная не распознана. Загрузите оригинальную накладную.',
+              'Распознаю накладную…',
+              'reduceInvoiceImage',
+          ]
+          missing = [item for item in required_ui if item not in ui]
+          if missing:
+              raise SystemExit(f'V15 iPhone UI contract missing: {missing!r}')
 
-          nested = re.search(
-              r'const compactProductCard = `<script[^>]*>\n([\s\S]*?)\n<\\/script>`;',
-              source,
-          )
-          if not nested:
-              raise SystemExit('Nested compact product-card script not found')
-          Path('/tmp/bali-launcher-compact-card.js').write_text(nested.group(1), encoding='utf-8')
-          print(f'Launcher contract OK; outer scripts={len(outer)}')
+          required_delivery = [
+              '__BALI_STOCK_V15_DELIVERY_LINK__',
+              'purchase_request_id',
+              'Заявка на закупку — при наличии',
+              'received_quantity',
+              'prefillRequest',
+          ]
+          missing = [item for item in required_delivery if item not in delivery]
+          if missing:
+              raise SystemExit(f'V15 delivery-link contract missing: {missing!r}')
+
+          scripts = re.findall(r'<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)</script>', launcher, flags=re.I)
+          if not scripts:
+              raise SystemExit('V15 launcher inline JavaScript not found')
+          for index, script in enumerate(scripts):
+              Path(f'/tmp/bali-v15-launcher-{index}.js').write_text(script, encoding='utf-8')
+          print(f'V15 launcher contract OK; inline scripts={len(scripts)}')
           PY
-          for file in /tmp/bali-launcher-outer-*.js /tmp/bali-launcher-compact-card.js; do
-            echo "Checking $file"
+          node --check ios-web/v15-ui.js
+          node --check ios-web/v15-delivery-link.js
+          for file in /tmp/bali-v15-launcher-*.js; do
             node --check "$file"
           done
       - name: Fetch production iPhone runtime
@@ -112,7 +135,7 @@ jobs:
               Path(f'/tmp/bali-runtime-inline-{index}.js').write_text(script, encoding='utf-8')
           print(f'Runtime contract OK; inline scripts={len(scripts)}')
           PY
-      - name: Parse every inline JavaScript block
+      - name: Parse every production runtime inline JavaScript block
         run: |
           for file in /tmp/bali-runtime-inline-*.js; do
             echo "Checking $file"
@@ -133,5 +156,5 @@ jobs:
           assert data['snapshot_before_v14'] is True, data
           assert data['scanner_workflows'] is True, data
           assert data['history_in_runtime_nav'] is False, data
-          print('Production iPhone runtime health + scanner workflows OK')
+          print('Production iPhone runtime health + V15 local UI modules OK')
           PY
