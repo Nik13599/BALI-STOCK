@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('primary navigation order matches the V14 contract', () {
+  test('primary navigation order remains exact', () {
     final app = File('lib/app.dart').readAsStringSync();
     final labels = RegExp("label: '([^']+)'")
         .allMatches(app)
@@ -33,13 +33,20 @@ void main() {
     expect(settings.contains("title: 'История всех операций'"), isTrue);
   });
 
-  test('iPhone profile uses the stabilized runtime launcher', () {
+  test('iPhone profile uses V15 launcher on top of the stabilized runtime', () {
     final generator = File('tool/generate_mobileconfig.py').readAsStringSync();
-    final launcher = File('ios-web/launch-v14-3.html').readAsStringSync();
-    expect(generator.contains('launch-v14-3.html'), isTrue);
+    final launcher = File('ios-web/launch-v15.html').readAsStringSync();
+    final ui = File('ios-web/v15-ui.js').readAsStringSync();
+    final delivery = File('ios-web/v15-delivery-link.js').readAsStringSync();
+
+    expect(generator.contains('launch-v15.html'), isTrue);
+    expect(generator.contains('BALI STOCK V15'), isTrue);
     expect(launcher.contains('bali-stock-ios-runtime'), isTrue);
-    expect(launcher.contains('Сканировать код'), isTrue);
+    expect(launcher.contains('v15-ui.js'), isTrue);
+    expect(launcher.contains('v15-delivery-link.js'), isTrue);
     expect(launcher.contains('return,[A-Za-z_\$][A-Za-z0-9_\$]*='), isTrue);
     expect(launcher.contains('async function snapshot'), isTrue);
+    expect(ui.contains('__BALI_STOCK_V15_UI__'), isTrue);
+    expect(delivery.contains('purchase_request_id'), isTrue);
   });
 }
