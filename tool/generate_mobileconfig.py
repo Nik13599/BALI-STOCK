@@ -6,7 +6,7 @@ import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_URL = "https://raw.githack.com/Nik13599/BALI-STOCK/production/ios-web/launch-v16.html"
+DEFAULT_URL = "https://mvnxfouyoynqyjdpcblh.supabase.co/functions/v1/bali-stock-ios-runtime"
 
 
 def main() -> None:
@@ -28,7 +28,7 @@ def main() -> None:
                 "IgnoreManifestScope": False,
                 "IsRemovable": True,
                 "Label": args.label,
-                "PayloadDescription": "Устанавливает production-версию BALI STOCK на экран Домой. Последующие релизы подхватываются через production-канал.",
+                "PayloadDescription": "Устанавливает production-версию BALI STOCK на экран Домой. Последующие обновления загружаются через стабильный Supabase runtime.",
                 "PayloadDisplayName": "BALI STOCK",
                 "PayloadIdentifier": "com.bali.stock.webclip",
                 "PayloadType": "com.apple.webClip.managed",

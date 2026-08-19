@@ -1,0 +1,59 @@
+name: iPhone Production Runtime Builder Smoke
+
+on:
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+concurrency:
+  group: bali-stock-iphone-builder-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and run runtime builder
+        run: |
+          python -m py_compile tool/build_ios_production_runtime.py
+          python tool/build_ios_production_runtime.py --output /tmp/bali-stock-next.html
+          test -s /tmp/bali-stock-next.html
+      - name: Validate dry-run runtime
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          html = Path('/tmp/bali-stock-next.html').read_text(encoding='utf-8')
+          required = [
+              '__BALI_STOCK_SUPABASE_RUNTIME__',
+              '__BALI_STOCK_RELEASE_VERSION__',
+              'bali-stock-client-api',
+              '__BALI_STOCK_V15_UI__',
+              '__BALI_STOCK_V15_DELIVERY_LINK__',
+              '__BALI_STOCK_V15_COMPAT__',
+              '__BALI_STOCK_V16_CATALOG_HISTORY__',
+          ]
+          forbidden = [
+              'raw.githack.com',
+              'raw.githubusercontent.com/Nik13599/BALI-STOCK',
+              'Введите пароль доступа',
+              'Пароль не введён',
+              'Неверный пароль',
+              'x-bali-stock-pin',
+          ]
+          missing = [value for value in required if value not in html]
+          found = [value for value in forbidden if value in html]
+          if missing:
+              raise SystemExit(f'Missing runtime markers: {missing}')
+          if found:
+              raise SystemExit(f'Forbidden runtime content: {found}')
+          scripts = re.findall(r'<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)</script>', html, flags=re.I)
+          if not scripts:
+              raise SystemExit('No inline scripts found')
+          for index, script in enumerate(scripts):
+              Path(f'/tmp/bali-next-inline-{index}.js').write_text(script, encoding='utf-8')
+          print('Dry-run iPhone runtime OK; inline scripts:', len(scripts))
+          PY
+          for file in /tmp/bali-next-inline-*.js; do node --check "$file"; done

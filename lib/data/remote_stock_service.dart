@@ -6,7 +6,7 @@ import 'package:http/http.dart' as http;
 import '../models.dart';
 
 class RemoteStockService {
-  static const endpoint = 'https://mvnxfouyoynqyjdpcblh.supabase.co/functions/v1/bali-stock-api';
+  static const endpoint = 'https://mvnxfouyoynqyjdpcblh.supabase.co/functions/v1/bali-stock-client-api';
   static const _publishableKey = 'sb_publishable_Tq2niBP0_2KuzTEuip8Oeg_1HhCUo29';
 
   String productKey({required String name, required StockUnit unit, required int packageSize}) =>
@@ -34,8 +34,8 @@ class RemoteStockService {
     return _decode(response);
   }
 
-  Future<void> authorize(String pin) async {
-    await post(pin, {'action': 'authorize'});
+  Future<void> authorize(String _) async {
+    await post('', {'action': 'authorize'});
   }
 
   Future<Map<String, dynamic>> syncCatalog({
@@ -395,11 +395,11 @@ class RemoteStockService {
     await post(pin, {'action': 'draft_delete', 'employee': employee});
   }
 
-  Future<Map<String, dynamic>> post(String pin, Map<String, dynamic> body) async {
+  Future<Map<String, dynamic>> post(String _, Map<String, dynamic> body) async {
     final response = await http
         .post(
           Uri.parse(endpoint),
-          headers: {...readHeaders, 'Content-Type': 'application/json', 'x-bali-stock-pin': pin},
+          headers: {...readHeaders, 'Content-Type': 'application/json'},
           body: jsonEncode(body),
         )
         .timeout(const Duration(seconds: 90));

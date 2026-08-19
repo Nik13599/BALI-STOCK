@@ -102,15 +102,16 @@ void main() {
     expect(source.contains('BaliNavIconKind.settings'), isTrue);
   });
 
-  test('iPhone runtime contains production scanner workflows for count and delivery', () {
-    final source = File('supabase/functions/bali-stock-ios-runtime/index.ts').readAsStringSync();
-    expect(source.contains('__BALI_V14_SCAN_WORKFLOWS__'), isTrue);
-    expect(source.contains('async function scanCodeFor(onCode)'), isTrue);
-    expect(source.contains("facingMode:'environment'"), isTrue);
-    expect(source.contains('function countScanFlow()'), isTrue);
-    expect(source.contains('function deliveryScanFlow()'), isTrue);
-    expect(source.contains('ДАННЫЕ ВВЕДЕНЫ'), isTrue);
-    expect(source.contains('НЕ ВВЕДЕНО'), isTrue);
-    expect(source.contains('Закупочная цена обязательна для каждой позиции поставки.'), isTrue);
+  test('iPhone production runtime smoke verifies scanner workflows after Supabase assembly', () {
+    final runtimeHost = File('supabase/functions/bali-stock-ios-runtime/index.ts').readAsStringSync();
+    final smoke = File('.github/workflows/iphone-runtime-smoke.yml').readAsStringSync();
+
+    expect(runtimeHost.contains('source: "supabase-storage"'), isTrue);
+    expect(runtimeHost.contains('github_dependency: false'), isTrue);
+    expect(runtimeHost.contains('password_prompt: false'), isTrue);
+    expect(smoke.contains('__BALI_V14_SCAN_WORKFLOWS__'), isTrue);
+    expect(smoke.contains('СОХРАНИТЬ → СЛЕДУЮЩИЙ СКАН'), isTrue);
+    expect(smoke.contains('Закупочная цена обязательна для каждой позиции поставки.'), isTrue);
+    expect(smoke.contains('Parse every production runtime inline JavaScript block'), isTrue);
   });
 }

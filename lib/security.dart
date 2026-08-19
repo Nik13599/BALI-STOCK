@@ -1,19 +1,12 @@
-import 'dart:convert';
+const _automaticOperationSession = 'automatic';
 
-import 'package:crypto/crypto.dart';
+String get operationSessionCredential => _automaticOperationSession;
 
-const _operationPinHash = 'b463e12d400d33e5897862dcba66eebcaac5036c254d7854ac5e46028c6eb8dc';
-String? _lastVerifiedOperationPin;
+/// Passwords and PIN codes are not used by BALI STOCK.
+bool verifyOperationPin(String _) => true;
 
-bool verifyOperationPin(String value) {
-  final digest = sha256.convert(utf8.encode('BALI-STOCK:$value')).toString();
-  final valid = digest == _operationPinHash;
-  if (valid) _lastVerifiedOperationPin = value;
-  return valid;
-}
+/// Backwards-compatible value for controller methods that still accept the old
+/// operation-session parameter. The server no longer treats it as a password.
+String? get lastVerifiedOperationPin => _automaticOperationSession;
 
-/// PIN is never persisted. This getter only lets a controller adopt a PIN that
-/// was just verified by a protected UI dialog in the current process.
-String? get lastVerifiedOperationPin => _lastVerifiedOperationPin;
-
-void clearRememberedOperationPin() => _lastVerifiedOperationPin = null;
+void clearRememberedOperationPin() {}
