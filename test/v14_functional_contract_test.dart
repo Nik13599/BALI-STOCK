@@ -122,16 +122,19 @@ void main() {
     final controller = File('lib/v14_controller.dart').readAsStringSync();
     final detail = File('lib/screens/product_detail_v15_screen.dart').readAsStringSync();
     final bulk = File('lib/screens/bulk_product_edit_v14_screen.dart').readAsStringSync();
+    final catalogService = File('lib/services/catalog_editor_service_v16.dart').readAsStringSync();
     expect(controller.contains('Закупочная цена обязательна для каждой позиции поставки'), isTrue);
     expect(controller.contains('uploadProductImage'), isTrue);
     expect(controller.contains("_outbox.enqueue('spot_stocktake'"), isTrue);
-    expect(controller.contains("_outbox.enqueue('catalog_product_batch'"), isTrue);
     expect(detail.contains('ПЕРЕУЧЕСТЬ ТОВАР'), isTrue);
     expect(detail.contains('Добавить фото товара'), isTrue);
     expect(detail.contains('Продажи и цены'), isTrue);
     expect(detail.contains('Поставщик не назначен'), isTrue);
     expect(detail.contains('Настройки товара'), isTrue);
-    expect(bulk.contains('Массовое редактирование'), isTrue);
+    expect(bulk.contains('Редактирование склада'), isTrue);
+    expect(bulk.contains('Пароль для редактирования склада не требуется'), isTrue);
+    expect(bulk.contains('ДОБАВИТЬ НОВЫЙ ТОВАР'), isTrue);
+    expect(catalogService.contains('bali-stock-catalog-api'), isTrue);
   });
 
   test('stock views are grouped by category and alphabetically inside each category', () {

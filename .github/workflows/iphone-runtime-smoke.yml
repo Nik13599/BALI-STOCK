@@ -16,27 +16,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validate V15 iPhone launcher and UI modules
+      - name: Validate V16 iPhone launcher and UI modules
         run: |
           python3 - <<'PY'
           from pathlib import Path
           import re
 
-          launcher = Path('ios-web/launch-v15.html').read_text(encoding='utf-8')
+          launcher = Path('ios-web/launch-v16.html').read_text(encoding='utf-8')
           ui = Path('ios-web/v15-ui.js').read_text(encoding='utf-8')
           delivery = Path('ios-web/v15-delivery-link.js').read_text(encoding='utf-8')
           compat = Path('ios-web/v15-compat.js').read_text(encoding='utf-8')
+          catalog = Path('ios-web/v16-catalog-history.js').read_text(encoding='utf-8')
           required_launcher = [
               'bali-stock-ios-runtime',
               'v15-ui.js',
               'v15-delivery-link.js',
               'v15-compat.js',
+              'v16-catalog-history.js',
               'async function snapshot',
               'baseSnapshot=snapshot',
           ]
           missing = [item for item in required_launcher if item not in launcher]
           if missing:
-              raise SystemExit(f'V15 launcher contract missing: {missing!r}')
+              raise SystemExit(f'V16 launcher contract missing: {missing!r}')
 
           required_ui = [
               '__BALI_STOCK_V15_UI__',
@@ -54,7 +56,7 @@ jobs:
           ]
           missing = [item for item in required_ui if item not in ui]
           if missing:
-              raise SystemExit(f'V15 iPhone UI contract missing: {missing!r}')
+              raise SystemExit(f'V15 base UI contract missing: {missing!r}')
 
           required_delivery = [
               '__BALI_STOCK_V15_DELIVERY_LINK__',
@@ -77,17 +79,31 @@ jobs:
           if missing:
               raise SystemExit(f'V15 compatibility bridge missing: {missing!r}')
 
+          required_v16 = [
+              '__BALI_STOCK_V16_CATALOG_HISTORY__',
+              'Редактирование склада',
+              'Пароль не требуется',
+              'ДОБАВИТЬ НОВЫЙ ТОВАР',
+              'catalog_product_batch',
+              "api('draft_delete'",
+              'Удалять можно только черновики',
+          ]
+          missing = [item for item in required_v16 if item not in catalog]
+          if missing:
+              raise SystemExit(f'V16 catalog/history contract missing: {missing!r}')
+
           scripts = re.findall(r'<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)</script>', launcher, flags=re.I)
           if not scripts:
-              raise SystemExit('V15 launcher inline JavaScript not found')
+              raise SystemExit('V16 launcher inline JavaScript not found')
           for index, script in enumerate(scripts):
-              Path(f'/tmp/bali-v15-launcher-{index}.js').write_text(script, encoding='utf-8')
-          print(f'V15 launcher contract OK; inline scripts={len(scripts)}')
+              Path(f'/tmp/bali-v16-launcher-{index}.js').write_text(script, encoding='utf-8')
+          print(f'V16 launcher contract OK; inline scripts={len(scripts)}')
           PY
           node --check ios-web/v15-ui.js
           node --check ios-web/v15-delivery-link.js
           node --check ios-web/v15-compat.js
-          for file in /tmp/bali-v15-launcher-*.js; do
+          node --check ios-web/v16-catalog-history.js
+          for file in /tmp/bali-v16-launcher-*.js; do
             node --check "$file"
           done
       - name: Fetch production iPhone runtime
@@ -169,5 +185,5 @@ jobs:
           assert data['snapshot_before_v14'] is True, data
           assert data['scanner_workflows'] is True, data
           assert data['history_in_runtime_nav'] is False, data
-          print('Production iPhone runtime health + V15 local UI modules OK')
+          print('Production iPhone runtime health + V16 local UI modules OK')
           PY

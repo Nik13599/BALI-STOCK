@@ -4,6 +4,7 @@ import '../controller.dart';
 import '../models.dart';
 import '../services/pdf_export_service.dart';
 import '../widgets/common.dart';
+import '../widgets/pin_value_dialog.dart';
 import 'history_screen.dart' show operationIcon, showOperationDetails;
 
 class HistoryOverviewScreen extends StatelessWidget {
@@ -14,6 +15,45 @@ class HistoryOverviewScreen extends StatelessWidget {
   Future<void> _exportOperation(BuildContext context, StockOperation operation) async {
     try {
       await PdfExportService.exportOperation(operation);
+    } catch (e) {
+      if (context.mounted) showErrorSnack(context, e);
+    }
+  }
+
+  Future<void> _deleteDraft(BuildContext context, StocktakeDraft draft) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Удалить черновик?'),
+        content: Text(
+          'Черновик переучёта «${draft.employeeName}» будет удалён без возможности восстановления. Проведённые операции при этом не затрагиваются.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Отмена')),
+          FilledButton.tonal(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('УДАЛИТЬ ЧЕРНОВИК'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    if (!controller.hasOperationSession) {
+      final pin = await showOperationPinValueDialog(context);
+      if (!context.mounted || pin == null) return;
+      try {
+        await controller.setOperationSessionPin(pin);
+      } catch (e) {
+        if (context.mounted) showErrorSnack(context, e);
+        return;
+      }
+    }
+
+    try {
+      await controller.deleteStocktakeDraft(draft.id);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Черновик удалён.')));
     } catch (e) {
       if (context.mounted) showErrorSnack(context, e);
     }
@@ -49,7 +89,7 @@ class HistoryOverviewScreen extends StatelessWidget {
       return const EmptyState(
         icon: Icons.history,
         title: 'История пока пуста',
-        message: 'Здесь без пароля видны всем пользователям поставки, переучёты, списания, перемещения, корректировки и незавершённые черновики.',
+        message: 'Здесь видны поставки, переучёты, списания, перемещения, корректировки и незавершённые черновики.',
       );
     }
 
@@ -58,14 +98,14 @@ class HistoryOverviewScreen extends StatelessWidget {
       children: [
         const InfoBanner(
           icon: Icons.verified_user_outlined,
-          text: 'Проведённые операции не удаляются и не переписываются. Если в документе допущена ошибка, создаётся отдельная корректирующая операция — исходная запись остаётся в истории.',
+          text: 'Проведённые операции не удаляются и не переписываются. Удалить можно только незавершённый черновик. Если в проведённом документе есть ошибка, создаётся отдельная корректирующая операция.',
         ),
         const SizedBox(height: 18),
         if (controller.activeStocktakeDrafts.isNotEmpty) ...[
           Text('Незавершённые переучёты', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)),
           const SizedBox(height: 10),
           for (final draft in controller.activeStocktakeDrafts) ...[
-            _DraftCard(draft: draft),
+            _DraftCard(draft: draft, onDelete: () => _deleteDraft(context, draft)),
             const SizedBox(height: 10),
           ],
           const SizedBox(height: 18),
@@ -74,9 +114,9 @@ class HistoryOverviewScreen extends StatelessWidget {
           Row(
             children: [
               Expanded(child: Text('Завершённые операции', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900))),
-              const Icon(Icons.picture_as_pdf_outlined, size: 20),
-              const SizedBox(width: 6),
-              const Text('PDF по каждой операции'),
+              const Icon(Icons.lock_outline, size: 19),
+              const SizedBox(width: 5),
+              const Text('не удаляются'),
             ],
           ),
           const SizedBox(height: 10),
@@ -95,9 +135,10 @@ class HistoryOverviewScreen extends StatelessWidget {
 }
 
 class _DraftCard extends StatelessWidget {
-  const _DraftCard({required this.draft});
+  const _DraftCard({required this.draft, required this.onDelete});
 
   final StocktakeDraft draft;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -116,7 +157,7 @@ class _DraftCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Переучёт', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17)),
+                      const Text('Переучёт • черновик', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17)),
                       Text(draft.employeeName),
                     ],
                   ),
@@ -136,8 +177,22 @@ class _DraftCard extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             LinearProgressIndicator(value: draft.totalCount == 0 ? 0 : draft.filledCount / draft.totalCount),
-            const SizedBox(height: 8),
-            const Text('Черновик не входит в итоговые результаты и не формирует итоговый PDF, пока сотрудник не завершит переучёт.', style: TextStyle(fontSize: 12)),
+            const SizedBox(height: 10),
+            LayoutBuilder(builder: (context, constraints) {
+              final delete = OutlinedButton.icon(
+                onPressed: onDelete,
+                icon: const Icon(Icons.delete_outline),
+                label: const Text('Удалить черновик'),
+              );
+              final note = const Text(
+                'Только черновик можно удалить. После завершения переучёта запись становится неизменяемой операцией.',
+                style: TextStyle(fontSize: 12),
+              );
+              if (constraints.maxWidth < 520) {
+                return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [note, const SizedBox(height: 8), delete]);
+              }
+              return Row(children: [Expanded(child: note), const SizedBox(width: 12), delete]);
+            }),
           ],
         ),
       ),
