@@ -1,12 +1,10 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 
 import '../models.dart';
 import '../v14_controller.dart';
 import '../widgets/bali_nav_icon.dart';
 import '../widgets/common.dart';
-import 'product_code_scanner_screen.dart';
+import '../widgets/product_code_actions.dart';
 import 'product_detail_v14_screen.dart';
 
 class HomeV14Screen extends StatefulWidget {
@@ -21,21 +19,10 @@ class _HomeV14ScreenState extends State<HomeV14Screen> {
   final search = TextEditingController();
   String query = '';
 
-  bool get _cameraScannerAvailable => Platform.isAndroid || Platform.isIOS;
-
   @override
   void dispose() {
     search.dispose();
     super.dispose();
-  }
-
-  Product? _byCode(String value) {
-    final wanted = value.trim().toLowerCase();
-    if (wanted.isEmpty) return null;
-    for (final p in widget.controller.products) {
-      if ((p.barcode ?? '').trim().toLowerCase() == wanted) return p;
-    }
-    return null;
   }
 
   void _open(Product product) {
@@ -43,61 +30,19 @@ class _HomeV14ScreenState extends State<HomeV14Screen> {
   }
 
   Future<void> _manualCode() async {
-    final code = await showTextValueDialog(context, 'Введите код товара', 'Штрихкод / QR-код');
+    final code = await enterProductCode(context);
     if (!mounted || code == null || code.trim().isEmpty) return;
     _handleCode(code);
   }
 
-  Future<String?> _desktopScannerCode() async {
-    final controller = TextEditingController();
-    final result = await showDialog<String>(
-      context: context,
-      barrierDismissible: true,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Сканировать код'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Отсканируйте штрихкод USB/Bluetooth-сканером. Поле уже в фокусе; большинство сканеров отправляют Enter автоматически.'),
-            const SizedBox(height: 14),
-            TextField(
-              controller: controller,
-              autofocus: true,
-              decoration: const InputDecoration(labelText: 'QR / штрихкод', hintText: 'Сканируйте или введите код'),
-              onSubmitted: (value) {
-                final code = value.trim();
-                if (code.isNotEmpty) Navigator.of(dialogContext).pop(code);
-              },
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('Отмена')),
-          FilledButton(
-            onPressed: () {
-              final code = controller.text.trim();
-              if (code.isNotEmpty) Navigator.of(dialogContext).pop(code);
-            },
-            child: const Text('Найти'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    return result;
-  }
-
   Future<void> _scan() async {
-    final code = _cameraScannerAvailable
-        ? await Navigator.of(context).push<String>(MaterialPageRoute(builder: (_) => const ProductCodeScannerScreen()))
-        : await _desktopScannerCode();
+    final code = await scanProductCode(context);
     if (!mounted || code == null || code.trim().isEmpty) return;
     _handleCode(code);
   }
 
   void _handleCode(String code) {
-    final product = _byCode(code);
+    final product = findProductByCode(widget.controller.products, code);
     if (product != null) {
       _open(product);
       return;
@@ -106,7 +51,7 @@ class _HomeV14ScreenState extends State<HomeV14Screen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Товар не найден'),
-        content: SelectableText('Код «${code.trim()}» не привязан к позиции склада. Привязать код можно в карточке/редактировании товара.'),
+        content: SelectableText('Код товара «${code.trim()}» не привязан к позиции склада. Привязать код можно в карточке/редактировании товара.'),
         actions: [TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('Закрыть'))],
       ),
     );
@@ -137,7 +82,7 @@ class _HomeV14ScreenState extends State<HomeV14Screen> {
             children: [
               Text('Главная', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900)),
               const SizedBox(height: 6),
-              Text('Сканируйте код или найдите товар по названию и штрихкоду.', style: Theme.of(context).textTheme.bodyLarge),
+              Text('Выберите товар: скан камерой, ввод кода товара или поиск по названию.', style: Theme.of(context).textTheme.bodyLarge),
               const SizedBox(height: 18),
               SizedBox(
                 width: double.infinity,
@@ -146,7 +91,7 @@ class _HomeV14ScreenState extends State<HomeV14Screen> {
                   icon: const BaliNavIcon(kind: BaliNavIconKind.scan, active: true, size: 22),
                   label: const Padding(
                     padding: EdgeInsets.symmetric(vertical: 5),
-                    child: Text('Сканировать код', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+                    child: Text('Сканировать камерой', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
                   ),
                 ),
               ),
@@ -154,7 +99,7 @@ class _HomeV14ScreenState extends State<HomeV14Screen> {
               TextField(
                 controller: search,
                 autofocus: false,
-                decoration: const InputDecoration(prefixIcon: Icon(Icons.search), labelText: 'Найти товар по имени или коду'),
+                decoration: const InputDecoration(prefixIcon: Icon(Icons.search), labelText: 'Найти по названию или коду товара'),
                 onChanged: (value) => setState(() => query = value),
               ),
               const SizedBox(height: 12),
@@ -162,7 +107,7 @@ class _HomeV14ScreenState extends State<HomeV14Screen> {
                 spacing: 10,
                 runSpacing: 10,
                 children: [
-                  OutlinedButton.icon(onPressed: _manualCode, icon: const Icon(Icons.numbers), label: const Text('Ввести код вручную')),
+                  OutlinedButton.icon(onPressed: _manualCode, icon: const Icon(Icons.pin_outlined), label: const Text('Ввести код товара')),
                   OutlinedButton.icon(
                     onPressed: widget.controller.refresh,
                     icon: const BaliNavIcon(kind: BaliNavIconKind.sync, size: 20),
