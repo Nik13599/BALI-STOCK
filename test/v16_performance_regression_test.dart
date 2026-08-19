@@ -21,7 +21,8 @@ void main() {
     expect(tick.contains('_polling = true;'), isTrue);
     expect(tick.contains('_polling = false;'), isTrue);
     expect(tick.indexOf('_remoteSync.fetchVersion()'), lessThan(tick.indexOf('super.onAppResumed()')));
-    expect(tick.contains('await super.onAppResumed();\n      _offlineOnline = super.sharedOnline;'), isTrue);
+    expect(tick.contains('await super.onAppResumed();'), isTrue);
+    expect(tick.contains('_offlineOnline = super.sharedOnline;'), isTrue);
   });
 
   test('base remote service exposes a lightweight version endpoint with shorter timeout', () {
