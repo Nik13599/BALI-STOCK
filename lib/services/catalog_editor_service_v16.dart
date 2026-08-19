@@ -7,6 +7,8 @@ import '../data/remote_stock_service.dart';
 class CatalogEditorServiceV16 {
   CatalogEditorServiceV16({RemoteStockService? remote}) : _remote = remote ?? RemoteStockService();
 
+  static const endpoint = 'https://mvnxfouyoynqyjdpcblh.supabase.co/functions/v1/bali-stock-catalog-api';
+
   final RemoteStockService _remote;
 
   Future<Map<String, dynamic>> saveBatch({
@@ -16,7 +18,7 @@ class CatalogEditorServiceV16 {
     if (items.isEmpty) throw ArgumentError('Не выбраны изменения каталога');
     final response = await http
         .post(
-          Uri.parse(RemoteStockService.endpoint),
+          Uri.parse(endpoint),
           headers: {..._remote.readHeaders, 'Content-Type': 'application/json'},
           body: jsonEncode({
             'action': 'catalog_product_batch',
