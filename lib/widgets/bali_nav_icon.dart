@@ -61,7 +61,7 @@ class _BaliNavPainter extends CustomPainter {
 
     switch (kind) {
       case BaliNavIconKind.home:
-        _home(canvas, paint);
+        _warehouse(canvas, paint);
       case BaliNavIconKind.stock:
         _stock(canvas, paint);
       case BaliNavIconKind.stocktake:
@@ -69,9 +69,9 @@ class _BaliNavPainter extends CustomPainter {
       case BaliNavIconKind.purchases:
         _purchases(canvas, paint);
       case BaliNavIconKind.delivery:
-        _delivery(canvas, paint);
+        _deliveryTruck(canvas, paint);
       case BaliNavIconKind.settings:
-        _settings(canvas, paint);
+        _settingsHex(canvas, paint);
       case BaliNavIconKind.scan:
         _scan(canvas, paint);
       case BaliNavIconKind.history:
@@ -87,35 +87,35 @@ class _BaliNavPainter extends CustomPainter {
     canvas.restore();
   }
 
-  void _home(Canvas c, Paint p) {
-    final path = Path()
-      ..moveTo(3, 11)
+  void _warehouse(Canvas c, Paint p) {
+    final shell = Path()
+      ..moveTo(2.8, 9.2)
       ..lineTo(12, 3.5)
-      ..lineTo(21, 11)
-      ..moveTo(5.5, 9.5)
-      ..lineTo(5.5, 20)
-      ..lineTo(18.5, 20)
-      ..lineTo(18.5, 9.5)
-      ..moveTo(9.3, 20)
-      ..lineTo(9.3, 14)
-      ..lineTo(14.7, 14)
-      ..lineTo(14.7, 20);
-    c.drawPath(path, p);
+      ..lineTo(21.2, 9.2)
+      ..lineTo(21.2, 20)
+      ..lineTo(2.8, 20)
+      ..close();
+    c.drawPath(shell, p);
+    c.drawRRect(RRect.fromRectAndRadius(const Rect.fromLTWH(7, 11, 10, 9), const Radius.circular(1.2)), p);
+    c.drawLine(const Offset(7, 14), const Offset(17, 14), p);
+    c.drawLine(const Offset(7, 17), const Offset(17, 17), p);
+    c.drawLine(const Offset(5, 9.5), const Offset(19, 9.5), p);
   }
 
   void _stock(Canvas c, Paint p) {
     c.drawRRect(RRect.fromRectAndRadius(const Rect.fromLTWH(3.5, 4, 17, 16), const Radius.circular(2)), p);
     c.drawLine(const Offset(4.5, 10), const Offset(19.5, 10), p);
     c.drawLine(const Offset(4.5, 15), const Offset(19.5, 15), p);
-    c.drawLine(const Offset(9, 5), const Offset(9, 9), p);
-    c.drawLine(const Offset(14.8, 11), const Offset(14.8, 14), p);
+    c.drawRect(const Rect.fromLTWH(6, 6, 4, 3), p);
+    c.drawRect(const Rect.fromLTWH(13.5, 11.5, 4, 2.5), p);
+    c.drawRect(const Rect.fromLTWH(8.5, 16.5, 5, 2.5), p);
   }
 
   void _stocktake(Canvas c, Paint p) {
     c.drawRRect(RRect.fromRectAndRadius(const Rect.fromLTWH(5, 4.5, 14, 16), const Radius.circular(2)), p);
-    c.drawLine(const Offset(9, 3.5), const Offset(15, 3.5), p);
-    c.drawLine(const Offset(9, 7.5), const Offset(15, 7.5), p);
-    c.drawPath(Path()..moveTo(8, 13)..lineTo(10.5, 15.5)..lineTo(16.5, 10), p);
+    c.drawRRect(RRect.fromRectAndRadius(const Rect.fromLTWH(8.5, 2.8, 7, 3.6), const Radius.circular(1)), p);
+    c.drawLine(const Offset(8, 9), const Offset(16, 9), p);
+    c.drawPath(Path()..moveTo(8, 14)..lineTo(10.7, 16.5)..lineTo(16.8, 11), p);
   }
 
   void _purchases(Canvas c, Paint p) {
@@ -124,23 +124,40 @@ class _BaliNavPainter extends CustomPainter {
     c.drawCircle(const Offset(17, 19), 1.2, p);
   }
 
-  void _delivery(Canvas c, Paint p) {
-    c.drawRRect(RRect.fromRectAndRadius(const Rect.fromLTWH(4, 9, 16, 11), const Radius.circular(2)), p);
-    c.drawLine(const Offset(12, 3), const Offset(12, 14), p);
-    c.drawPath(Path()..moveTo(8.5, 10.5)..lineTo(12, 14)..lineTo(15.5, 10.5), p);
-    c.drawLine(const Offset(4.5, 9), const Offset(8, 6.5), p);
-    c.drawLine(const Offset(19.5, 9), const Offset(16, 6.5), p);
+  void _deliveryTruck(Canvas c, Paint p) {
+    c.drawRRect(RRect.fromRectAndRadius(const Rect.fromLTWH(2.5, 7, 11.5, 9), const Radius.circular(1.4)), p);
+    final cab = Path()
+      ..moveTo(14, 10)
+      ..lineTo(18.2, 10)
+      ..lineTo(21, 13)
+      ..lineTo(21, 16)
+      ..lineTo(14, 16)
+      ..close();
+    c.drawPath(cab, p);
+    c.drawLine(const Offset(16.2, 11.1), const Offset(18.2, 11.1), p);
+    c.drawLine(const Offset(18.2, 11.1), const Offset(19.8, 13), p);
+    c.drawCircle(const Offset(7, 18), 2, p);
+    c.drawCircle(const Offset(18, 18), 2, p);
+    c.drawLine(const Offset(9, 18), const Offset(16, 18), p);
   }
 
-  void _settings(Canvas c, Paint p) {
-    c.drawCircle(const Offset(12, 12), 3.2, p);
-    c.drawCircle(const Offset(12, 12), 7.2, p);
-    for (var i = 0; i < 8; i++) {
-      final a = i * math.pi / 4;
-      final inner = Offset(12 + math.cos(a) * 7.4, 12 + math.sin(a) * 7.4);
-      final outer = Offset(12 + math.cos(a) * 9.5, 12 + math.sin(a) * 9.5);
-      c.drawLine(inner, outer, p);
-    }
+  void _settingsHex(Canvas c, Paint p) {
+    final hex = Path()
+      ..moveTo(8, 3.2)
+      ..lineTo(16, 3.2)
+      ..lineTo(21, 8)
+      ..lineTo(21, 16)
+      ..lineTo(16, 20.8)
+      ..lineTo(8, 20.8)
+      ..lineTo(3, 16)
+      ..lineTo(3, 8)
+      ..close();
+    c.drawPath(hex, p);
+    c.drawCircle(const Offset(12, 12), 3.3, p);
+    c.drawLine(const Offset(12, 5.8), const Offset(12, 8.2), p);
+    c.drawLine(const Offset(12, 15.8), const Offset(12, 18.2), p);
+    c.drawLine(const Offset(5.8, 12), const Offset(8.2, 12), p);
+    c.drawLine(const Offset(15.8, 12), const Offset(18.2, 12), p);
   }
 
   void _scan(Canvas c, Paint p) {

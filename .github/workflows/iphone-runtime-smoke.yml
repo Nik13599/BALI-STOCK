@@ -51,9 +51,25 @@ jobs:
           if '<svg' not in nav:
               raise SystemExit('Custom SVG navigation icons are missing')
 
+          required_scanner_contract = [
+              '__BALI_V14_SCAN_WORKFLOWS__',
+              'function scanCodeFor(onCode)',
+              'Сканировать товар',
+              'Ввести код товара',
+              'СОХРАНИТЬ → СЛЕДУЮЩИЙ СКАН',
+              'ДАННЫЕ ВВЕДЕНЫ',
+              'НЕ ВВЕДЕНО',
+              'Название / категория / код товара',
+              'Закупочная цена обязательна для каждой позиции поставки.',
+              "facingMode:'environment'",
+          ]
+          missing = [item for item in required_scanner_contract if item not in html]
+          if missing:
+              raise SystemExit(f'Scanner workflow contract missing: {missing!r}')
+
           scripts = re.findall(r'<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)</script>', html, flags=re.I)
-          if len(scripts) < 3:
-              raise SystemExit(f'Expected multiple inline scripts, got {len(scripts)}')
+          if len(scripts) < 4:
+              raise SystemExit(f'Expected multiple inline scripts including scanner workflow, got {len(scripts)}')
           for index, script in enumerate(scripts):
               Path(f'/tmp/bali-runtime-inline-{index}.js').write_text(script, encoding='utf-8')
           print(f'Runtime contract OK; inline scripts={len(scripts)}')
@@ -77,6 +93,7 @@ jobs:
           assert data['remaining_legacy_return_comma'] == 0, data
           assert data['snapshot_found'] is True, data
           assert data['snapshot_before_v14'] is True, data
+          assert data['scanner_workflows'] is True, data
           assert data['history_in_runtime_nav'] is False, data
-          print('Production iPhone runtime health OK')
+          print('Production iPhone runtime health + scanner workflows OK')
           PY

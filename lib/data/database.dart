@@ -4,6 +4,7 @@ import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart' as mobile;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import 'operation_schema.dart';
 import 'seed_catalog.dart';
 
 class BaliStockDatabase {
@@ -60,7 +61,7 @@ class BaliStockDatabase {
               FOREIGN KEY(category_id) REFERENCES categories(id)
             )
           ''');
-          await _createOperationTables(db);
+          await createOperationTables(db);
           await _createDraftTables(db);
           await _createIndexes(db);
           await _seedCatalog(db);
@@ -114,7 +115,7 @@ class BaliStockDatabase {
     // Rebuild it so the local cache can faithfully mirror all immutable server operations.
     await db.execute('ALTER TABLE operation_lines RENAME TO operation_lines_v5');
     await db.execute('ALTER TABLE operations RENAME TO operations_v5');
-    await _createOperationTables(db);
+    await createOperationTables(db);
 
     await db.execute('''
       INSERT INTO operations(
@@ -134,53 +135,6 @@ class BaliStockDatabase {
     ''');
     await db.execute('DROP TABLE operation_lines_v5');
     await db.execute('DROP TABLE operations_v5');
-  }
-
-  static Future<void> _createOperationTables(Database db) async {
-    await db.execute('''
-      CREATE TABLE operations (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        type TEXT NOT NULL CHECK (type IN ('delivery', 'stocktake', 'writeoff', 'transfer', 'correction')),
-        created_at TEXT NOT NULL,
-        employee_name TEXT,
-        started_at TEXT,
-        completed_at TEXT,
-        active_seconds INTEGER NOT NULL DEFAULT 0,
-        total_seconds INTEGER NOT NULL DEFAULT 0,
-        supplier_id TEXT,
-        supplier_name TEXT,
-        document_number TEXT,
-        comment TEXT,
-        attachment_url TEXT,
-        source_location_id TEXT,
-        source_location_name TEXT,
-        target_location_id TEXT,
-        target_location_name TEXT,
-        correction_of TEXT,
-        total_value REAL
-      )
-    ''');
-    await db.execute('''
-      CREATE TABLE operation_lines (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        operation_id INTEGER NOT NULL,
-        product_id INTEGER NOT NULL,
-        product_name TEXT NOT NULL,
-        category_name TEXT NOT NULL,
-        bottle_ml INTEGER NOT NULL,
-        stock_unit TEXT NOT NULL DEFAULT 'ml',
-        before_total_ml INTEGER NOT NULL,
-        before_initialized INTEGER NOT NULL DEFAULT 1,
-        change_total_ml INTEGER NOT NULL,
-        after_total_ml INTEGER NOT NULL,
-        unit_cost REAL,
-        line_value REAL,
-        comment TEXT,
-        source_location_id TEXT,
-        target_location_id TEXT,
-        FOREIGN KEY(operation_id) REFERENCES operations(id) ON DELETE CASCADE
-      )
-    ''');
   }
 
   static Future<void> _createDraftTables(Database db) async {

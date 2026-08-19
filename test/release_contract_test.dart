@@ -17,12 +17,14 @@ void main() {
     expect(app.contains('BaliNavIconKind.settings'), isTrue);
   });
 
-  test('home exposes scan, name search and manual code on every desktop/mobile build', () {
+  test('home exposes camera scan, name/code search and manual product code', () {
     final home = File('lib/screens/home_v14_screen.dart').readAsStringSync();
-    expect(home.contains("Text('Сканировать код'"), isTrue);
-    expect(home.contains("labelText: 'Найти товар по имени или коду'"), isTrue);
-    expect(home.contains("Text('Ввести код вручную'"), isTrue);
-    expect(home.contains('_desktopScannerCode'), isTrue);
+    expect(home.contains('scanProductCode(context)'), isTrue);
+    expect(home.contains('enterProductCode(context)'), isTrue);
+    expect(home.contains('Сканировать камерой'), isTrue);
+    expect(home.contains("labelText: 'Найти по названию или коду товара'"), isTrue);
+    expect(home.contains('Ввести код товара'), isTrue);
+    expect(home.contains("p.barcode ?? ''"), isTrue);
   });
 
   test('history lives under settings instead of the primary navigation', () {

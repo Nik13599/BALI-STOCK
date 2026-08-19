@@ -10,6 +10,7 @@ import '../widgets/pin_value_dialog.dart';
 IconData operationIcon(StockOperationType type) => switch (type) {
       StockOperationType.delivery => Icons.local_shipping_outlined,
       StockOperationType.stocktake => Icons.fact_check_outlined,
+      StockOperationType.spotStocktake => Icons.center_focus_strong_outlined,
       StockOperationType.writeoff => Icons.remove_circle_outline,
       StockOperationType.transfer => Icons.swap_horiz,
       StockOperationType.correction => Icons.tune,
@@ -173,7 +174,8 @@ class _HistoryLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final initialBalance = !line.beforeInitialized && type == StockOperationType.stocktake;
+    final inventoryType = type == StockOperationType.stocktake || type == StockOperationType.spotStocktake;
+    final initialBalance = !line.beforeInitialized && inventoryType;
     final diff = line.changeTotalMl;
     final diffText = '${diff >= 0 ? '+' : '−'}${formatTotalAmount(diff.abs(), line.stockUnit)}';
     final diffColor = diff < 0 ? Theme.of(context).colorScheme.error : Theme.of(context).colorScheme.primary;
@@ -185,6 +187,7 @@ class _HistoryLine extends StatelessWidget {
     final actionText = switch (type) {
       StockOperationType.delivery => 'Принято: $diffText',
       StockOperationType.stocktake => initialBalance ? 'Первичный остаток: ${formatStockParts(line.afterTotalMl, line.bottleMl, line.stockUnit)}' : 'Расхождение: $diffText',
+      StockOperationType.spotStocktake => initialBalance ? 'Первичный точечный остаток: ${formatStockParts(line.afterTotalMl, line.bottleMl, line.stockUnit)}' : 'Точечное расхождение: $diffText',
       StockOperationType.writeoff => 'Списано: $diffText',
       StockOperationType.transfer => 'Перемещено между местами хранения',
       StockOperationType.correction => 'Коррекция: $diffText',

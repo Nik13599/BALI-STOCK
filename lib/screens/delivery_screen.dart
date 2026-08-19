@@ -8,7 +8,9 @@ import '../controller.dart';
 import '../models.dart';
 import '../services/invoice_recognition_service.dart';
 import '../services/pdf_export_service.dart';
+import '../widgets/bali_nav_icon.dart';
 import '../widgets/common.dart';
+import '../widgets/product_code_actions.dart';
 
 class DeliveryScreen extends StatefulWidget {
   const DeliveryScreen({super.key, required this.controller});
@@ -24,6 +26,7 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
   final _employee = TextEditingController();
   final _document = TextEditingController();
   final _comment = TextEditingController();
+  final _productSearch = TextEditingController();
   final _recognizer = InvoiceRecognitionService();
   bool _saving = false;
   bool _recognizing = false;
@@ -35,6 +38,7 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
   @override
   void initState() {
     super.initState();
+    _productSearch.addListener(_refreshProductSearch);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       setState(() => _locationId = widget.controller.primaryLocation?.id);
@@ -43,16 +47,70 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
 
   @override
   void dispose() {
+    _productSearch.removeListener(_refreshProductSearch);
     _employee.dispose();
     _document.dispose();
     _comment.dispose();
+    _productSearch.dispose();
     super.dispose();
   }
 
-  Future<void> _addLine([DeliveryDraftLine? initial]) async {
-    final line = await showDeliveryLineDialog(context, widget.controller.products, initial: initial);
-    if (line == null) return;
+  void _refreshProductSearch() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _addLine([DeliveryDraftLine? initial, Product? preselectedProduct, bool scanWorkflow = false]) async {
+    final line = await showDeliveryLineDialog(
+      context,
+      widget.controller.products,
+      initial: initial,
+      preselectedProduct: preselectedProduct,
+      scanWorkflow: scanWorkflow,
+    );
+    if (line == null || !mounted) return;
     setState(() => _lines[line.product.id] = line);
+  }
+
+  Future<void> _manualProductCode() async {
+    final code = await enterProductCode(context);
+    if (!mounted || code == null) return;
+    final product = findProductByCode(widget.controller.products, code);
+    if (product == null) {
+      showErrorSnack(context, 'Код товара ${code.trim()} не привязан ни к одной позиции.');
+      return;
+    }
+    await _addLine(_lines[product.id], product);
+  }
+
+  Future<void> _scanProductWorkflow() async {
+    while (mounted) {
+      final code = await scanProductCode(context);
+      if (!mounted || code == null) return;
+      final product = findProductByCode(widget.controller.products, code);
+      if (product == null) {
+        showErrorSnack(context, 'Код товара ${code.trim()} не привязан ни к одной позиции. Сканируйте следующий товар или закройте сканер.');
+        continue;
+      }
+      final before = _lines[product.id];
+      final line = await showDeliveryLineDialog(
+        context,
+        widget.controller.products,
+        initial: before,
+        preselectedProduct: product,
+        scanWorkflow: true,
+      );
+      if (!mounted || line == null) return;
+      setState(() => _lines[line.product.id] = line);
+    }
+  }
+
+  List<Product> _searchResults() {
+    final q = _productSearch.text.trim().toLowerCase();
+    if (q.isEmpty) return const [];
+    return widget.controller.products
+        .where((p) => '${p.name} ${p.categoryName} ${p.barcode ?? ''}'.toLowerCase().contains(q))
+        .take(12)
+        .toList(growable: false);
   }
 
   Future<void> _addSupplier() async {
@@ -98,7 +156,7 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
       });
       final doubtful = result.lines.where((line) => line.confidence < .72).length;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Распознано ${result.lines.length} позиций${doubtful > 0 ? ', проверить вручную: $doubtful' : ''}. Перед проведением обязательно сверьте результат с накладной.'),
+        content: Text('Распознано ${result.lines.length} позиций${doubtful > 0 ? ', проверить вручную: $doubtful' : ''}. Перед проведением обязательно сверьте результат с накладной и заполните закупочную цену.'),
       ));
     } catch (e) {
       if (mounted) showErrorSnack(context, e);
@@ -129,6 +187,11 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
     if (_lines.isEmpty) return;
     if (_employee.text.trim().isEmpty) {
       showErrorSnack(context, 'Укажите ФИО сотрудника, принимающего поставку.');
+      return;
+    }
+    final missingPrice = _lines.values.where((line) => line.unitCost == null).length;
+    if (missingPrice > 0) {
+      showErrorSnack(context, 'У $missingPrice позиций не заполнена закупочная цена. Цена обязательна для каждой позиции поставки.');
       return;
     }
     final lowConfidence = _lines.values.where((line) => (line.confidence ?? 1) < .55 && !line.manuallyCorrected).length;
@@ -183,6 +246,7 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
         _invoicePath = null;
         _document.clear();
         _comment.clear();
+        _productSearch.clear();
       });
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(attachmentPath == null ? 'Поставка принята. Остатки обновлены на всех устройствах.' : 'Поставка принята. Накладная сохранена в приватном архиве.'),
@@ -202,6 +266,7 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
       builder: (context, _) {
         final products = widget.controller.products;
         final notInitialized = products.where((p) => !p.stockInitialized).length;
+        final searchResults = _searchResults();
         return Scaffold(
           appBar: AppBar(title: const Text('Принять поставку')),
           body: products.isEmpty
@@ -216,26 +281,79 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
                       padding: const EdgeInsets.fromLTRB(20, 16, 20, 120),
                       children: [
                         const InfoBanner(
-                          icon: Icons.document_scanner_outlined,
-                          text: 'Накладную можно сфотографировать или выбрать как изображение. OCR распознаёт русский и английский текст, но никогда не проводит поставку автоматически: все строки проверяются и редактируются вручную. Исходное фото сохраняется в приватном архиве после проведения.',
+                          icon: Icons.local_shipping_outlined,
+                          text: 'Товар можно добавить тремя способами: сканировать камерой, ввести код товара или найти по названию. Для серии товаров используйте режим «Сканировать товар»: после ввода количества и цены сразу откроется следующий скан.',
                         ),
                         const SizedBox(height: 18),
                         _deliveryHeader(context),
                         const SizedBox(height: 18),
                         _scanActions(context),
                         const SizedBox(height: 22),
-                        Row(
+                        Text('Позиции поставки', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)),
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
                           children: [
-                            Expanded(child: Text('Позиции поставки', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900))),
-                            FilledButton.icon(onPressed: _saving || _recognizing ? null : () => _addLine(), icon: const Icon(Icons.edit_note), label: const Text('Ввести вручную')),
+                            FilledButton.icon(
+                              onPressed: _saving || _recognizing ? null : _scanProductWorkflow,
+                              icon: const BaliNavIcon(kind: BaliNavIconKind.scan, active: true, size: 20),
+                              label: const Text('Сканировать товар'),
+                            ),
+                            OutlinedButton.icon(
+                              onPressed: _saving || _recognizing ? null : _manualProductCode,
+                              icon: const Icon(Icons.pin_outlined),
+                              label: const Text('Ввести код товара'),
+                            ),
+                            OutlinedButton.icon(
+                              onPressed: _saving || _recognizing ? null : () => _addLine(),
+                              icon: const Icon(Icons.edit_note_outlined),
+                              label: const Text('Выбрать из списка'),
+                            ),
                           ],
                         ),
+                        const SizedBox(height: 10),
+                        TextField(
+                          controller: _productSearch,
+                          decoration: InputDecoration(
+                            prefixIcon: const Icon(Icons.search),
+                            labelText: 'Найти товар по названию или коду',
+                            suffixIcon: _productSearch.text.isEmpty
+                                ? null
+                                : IconButton(onPressed: _productSearch.clear, tooltip: 'Очистить', icon: const Icon(Icons.clear)),
+                          ),
+                        ),
+                        if (_productSearch.text.trim().isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Card(
+                            child: searchResults.isEmpty
+                                ? const Padding(padding: EdgeInsets.all(16), child: Text('Совпадений нет.'))
+                                : Column(
+                                    children: [
+                                      for (var i = 0; i < searchResults.length; i++) ...[
+                                        Builder(builder: (context) {
+                                          final product = searchResults[i];
+                                          final added = _lines.containsKey(product.id);
+                                          return ListTile(
+                                            leading: Icon(added ? Icons.check_circle_outline : Icons.add_circle_outline),
+                                            title: Text(product.name, style: const TextStyle(fontWeight: FontWeight.w800)),
+                                            subtitle: Text('${product.categoryName}${product.barcode?.trim().isNotEmpty == true ? ' • код ${product.barcode}' : ''}'),
+                                            trailing: Chip(label: Text(added ? 'ДОБАВЛЕНО' : 'ДОБАВИТЬ')),
+                                            onTap: _saving ? null : () => _addLine(_lines[product.id], product),
+                                          );
+                                        }),
+                                        if (i != searchResults.length - 1) const Divider(height: 1),
+                                      ],
+                                    ],
+                                  ),
+                          ),
+                        ],
                         const SizedBox(height: 12),
                         if (_lines.isEmpty)
                           Container(
                             padding: const EdgeInsets.all(22),
                             decoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainer, borderRadius: BorderRadius.circular(18)),
-                            child: const Text('Отсканируйте накладную или добавьте товары вручную.', textAlign: TextAlign.center),
+                            child: const Text('Пока нет позиций. Сканируйте товар, введите код или найдите его по названию.', textAlign: TextAlign.center),
                           )
                         else
                           _linesCard(context),
@@ -302,24 +420,38 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
   }
 
   Widget _scanActions(BuildContext context) {
-    return Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      children: [
-        if (Platform.isAndroid || Platform.isIOS)
-          FilledButton.tonalIcon(
-            onPressed: _recognizing || _saving ? null : () => _scanInvoice(camera: true),
-            icon: const Icon(Icons.camera_alt_outlined),
-            label: const Text('Сфотографировать накладную'),
-          ),
-        FilledButton.tonalIcon(
-          onPressed: _recognizing || _saving ? null : () => _scanInvoice(camera: false),
-          icon: _recognizing ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.document_scanner_outlined),
-          label: Text(_recognizing ? 'Распознавание…' : 'Выбрать скан / фото'),
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('Накладная / ТТН', style: TextStyle(fontWeight: FontWeight.w900)),
+            const SizedBox(height: 8),
+            const Text('Дополнительно можно сфотографировать или выбрать накладную: OCR предложит позиции, но поставка всё равно подтверждается вручную.'),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                if (Platform.isAndroid || Platform.isIOS)
+                  FilledButton.tonalIcon(
+                    onPressed: _recognizing || _saving ? null : () => _scanInvoice(camera: true),
+                    icon: const Icon(Icons.camera_alt_outlined),
+                    label: const Text('Сфотографировать накладную'),
+                  ),
+                FilledButton.tonalIcon(
+                  onPressed: _recognizing || _saving ? null : () => _scanInvoice(camera: false),
+                  icon: _recognizing ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.document_scanner_outlined),
+                  label: Text(_recognizing ? 'Распознавание…' : 'Выбрать скан / фото'),
+                ),
+                if (_rawOcrText != null)
+                  Chip(avatar: const Icon(Icons.auto_awesome, size: 18), label: Text('OCR: ${_lines.values.where((line) => line.confidence != null).length} поз.')),
+              ],
+            ),
+          ],
         ),
-        if (_rawOcrText != null)
-          Chip(avatar: const Icon(Icons.auto_awesome, size: 18), label: Text('OCR: ${_lines.values.where((line) => line.confidence != null).length} поз.')),
-      ],
+      ),
     );
   }
 
@@ -342,6 +474,7 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
                 title: Row(
                   children: [
                     Expanded(child: Text(line.product.name, style: const TextStyle(fontWeight: FontWeight.w800))),
+                    const Chip(visualDensity: VisualDensity.compact, avatar: Icon(Icons.check_circle_outline, size: 17), label: Text('ДАННЫЕ ВВЕДЕНЫ')),
                     if (confidence != null)
                       Chip(
                         visualDensity: VisualDensity.compact,
@@ -355,14 +488,14 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
                   children: [
                     Text('${line.product.categoryName} • ${_productUnitLabel(line.product)}'),
                     if (line.sourceText != null) Text('OCR: ${line.sourceText}', maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodySmall),
-                    if (line.unitCost != null) Text('Цена: ${formatMoney(line.unitCost, line.product.costCurrency)} за упаковку/единицу'),
+                    Text(line.unitCost == null ? 'Цена не заполнена' : 'Цена: ${formatMoney(line.unitCost, line.product.costCurrency)} за упаковку/единицу'),
                   ],
                 ),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text('+${formatStockParts(line.addedMl, line.product.packageSize, line.product.stockUnit)}', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900)),
-                    IconButton(onPressed: _saving ? null : () => _addLine(line), tooltip: 'Проверить / исправить', icon: const Icon(Icons.edit_outlined)),
+                    IconButton(onPressed: _saving ? null : () => _addLine(line, line.product), tooltip: 'Проверить / исправить', icon: const Icon(Icons.edit_outlined)),
                     IconButton(onPressed: _saving ? null : () => setState(() => _lines.remove(line.product.id)), tooltip: 'Удалить строку', icon: const Icon(Icons.delete_outline)),
                   ],
                 ),
@@ -460,9 +593,11 @@ Future<DeliveryDraftLine?> showDeliveryLineDialog(
   BuildContext context,
   List<Product> products, {
   DeliveryDraftLine? initial,
+  Product? preselectedProduct,
+  bool scanWorkflow = false,
 }) async {
   if (products.isEmpty) return null;
-  var productId = initial?.product.id ?? products.first.id;
+  var productId = initial?.product.id ?? preselectedProduct?.id ?? products.first.id;
   final whole = TextEditingController(text: '${initial?.bottles ?? 0}');
   final extra = TextEditingController(text: '${initial?.extraMl ?? 0}');
   final cost = TextEditingController(text: initial?.unitCost?.toStringAsFixed(2) ?? '');
@@ -470,6 +605,7 @@ Future<DeliveryDraftLine?> showDeliveryLineDialog(
 
   final result = await showDialog<DeliveryDraftLine>(
     context: context,
+    barrierDismissible: !scanWorkflow,
     builder: (dialogContext) => StatefulBuilder(
       builder: (dialogContext, setState) {
         final product = products.firstWhere((p) => p.id == productId);
@@ -479,9 +615,16 @@ Future<DeliveryDraftLine?> showDeliveryLineDialog(
           StockUnit.piece => 'Количество, шт.',
         };
         final extraLabel = product.stockUnit == StockUnit.ml ? 'Доп. объём, мл' : 'Доп. остаток, г';
+        final productLocked = initial != null || preselectedProduct != null;
 
         return AlertDialog(
-          title: Text(initial == null ? 'Позиция поставки' : 'Проверить строку накладной'),
+          title: Row(
+            children: [
+              const BaliNavIcon(kind: BaliNavIconKind.delivery, active: true, size: 24),
+              const SizedBox(width: 10),
+              Expanded(child: Text(initial == null ? 'Позиция поставки' : 'Проверить позицию поставки')),
+            ],
+          ),
           content: SizedBox(
             width: 580,
             child: Form(
@@ -493,20 +636,23 @@ Future<DeliveryDraftLine?> showDeliveryLineDialog(
                     DropdownButtonFormField<int>(
                       initialValue: productId,
                       isExpanded: true,
-                      decoration: const InputDecoration(labelText: 'Позиция'),
+                      decoration: InputDecoration(
+                        labelText: 'Позиция',
+                        helperText: productLocked ? 'Позиция зафиксирована выбранным/отсканированным кодом.' : null,
+                      ),
                       items: products.map((p) => DropdownMenuItem(value: p.id, child: Text('${p.categoryName} — ${p.name} (${_productUnitLabel(p)})'))).toList(growable: false),
-                      onChanged: (value) {
-                        if (value != null) {
-                          setState(() {
-                            productId = value;
-                            if (initial == null) {
-                              whole.text = '0';
-                              extra.text = '0';
-                              cost.text = '';
-                            }
-                          });
-                        }
-                      },
+                      onChanged: productLocked
+                          ? null
+                          : (value) {
+                              if (value != null) {
+                                setState(() {
+                                  productId = value;
+                                  whole.text = '0';
+                                  extra.text = '0';
+                                  cost.text = '';
+                                });
+                              }
+                            },
                     ),
                     const SizedBox(height: 12),
                     if (product.stockUnit == StockUnit.piece)
@@ -531,9 +677,9 @@ Future<DeliveryDraftLine?> showDeliveryLineDialog(
                     TextFormField(
                       controller: cost,
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      decoration: InputDecoration(labelText: 'Цена за упаковку / единицу, ${product.costCurrency}'),
+                      decoration: InputDecoration(labelText: 'Закупочная цена за упаковку / единицу, ${product.costCurrency} *'),
                       validator: (value) {
-                        if (value == null || value.trim().isEmpty) return null;
+                        if (value == null || value.trim().isEmpty) return 'Закупочная цена обязательна';
                         final parsed = double.tryParse(value.replaceAll(',', '.'));
                         return parsed == null || parsed < 0 ? 'Некорректная цена' : null;
                       },
@@ -542,6 +688,10 @@ Future<DeliveryDraftLine?> showDeliveryLineDialog(
                       const SizedBox(height: 10),
                       Align(alignment: Alignment.centerLeft, child: Text('Распознано: ${initial!.sourceText}', style: Theme.of(context).textTheme.bodySmall)),
                     ],
+                    if (scanWorkflow) ...[
+                      const SizedBox(height: 10),
+                      const InfoBanner(icon: Icons.qr_code_scanner, text: 'После сохранения автоматически откроется камера для следующего товара. Чтобы закончить серию — закройте следующий экран сканера.'),
+                    ],
                   ],
                 ),
               ),
@@ -549,7 +699,7 @@ Future<DeliveryDraftLine?> showDeliveryLineDialog(
           ),
           actions: [
             TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('Отмена')),
-            FilledButton(
+            FilledButton.icon(
               onPressed: () {
                 if (!(key.currentState?.validate() ?? false)) return;
                 final wholeCount = int.parse(whole.text);
@@ -562,13 +712,14 @@ Future<DeliveryDraftLine?> showDeliveryLineDialog(
                   product: product,
                   bottles: wholeCount,
                   extraMl: extraAmount,
-                  unitCost: cost.text.trim().isEmpty ? null : double.parse(cost.text.replaceAll(',', '.')),
+                  unitCost: double.parse(cost.text.replaceAll(',', '.')),
                   sourceText: initial?.sourceText,
                   confidence: initial?.confidence,
                   manuallyCorrected: initial != null,
                 ));
               },
-              child: Text(initial == null ? 'Добавить' : 'Подтвердить'),
+              icon: scanWorkflow ? const BaliNavIcon(kind: BaliNavIconKind.scan, active: true, size: 19) : const Icon(Icons.check_circle_outline),
+              label: Text(scanWorkflow ? 'Сохранить → следующий скан' : (initial == null ? 'Добавить' : 'Подтвердить')),
             ),
           ],
         );
