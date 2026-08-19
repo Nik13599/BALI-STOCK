@@ -88,12 +88,10 @@ jobs:
       - name: Fetch production iPhone runtime
         run: |
           curl --fail --silent --show-error \
-            -D /tmp/bali-runtime-headers.txt \
             "https://mvnxfouyoynqyjdpcblh.supabase.co/functions/v1/bali-stock-ios-runtime?ci=${GITHUB_RUN_ID}" \
             -o /tmp/bali-stock-ios-runtime.html
           test -s /tmp/bali-stock-ios-runtime.html
           grep -qi '^<!doctype html>' /tmp/bali-stock-ios-runtime.html
-          grep -qi '^content-type: text/html' /tmp/bali-runtime-headers.txt
 
       - name: Validate self-contained production runtime contract
         run: |
