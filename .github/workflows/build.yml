@@ -181,10 +181,11 @@ jobs:
           assert profile['PayloadType'] == 'Configuration'
           clip = profile['PayloadContent'][0]
           assert clip['PayloadType'] == 'com.apple.webClip.managed'
-          assert clip['URL'].startswith('https://')
-          assert '/BALI-STOCK/production/ios-web/launch-v16.html' in clip['URL']
+          expected = 'https://mvnxfouyoynqyjdpcblh.supabase.co/functions/v1/bali-stock-ios-runtime'
+          assert clip['URL'] == expected, clip['URL']
+          assert 'github' not in clip['URL'].lower()
           assert clip['Icon']
-          print('mobileconfig production channel OK:', clip['URL'])
+          print('mobileconfig Supabase production runtime OK:', clip['URL'])
           PY
       - uses: actions/upload-artifact@v4
         with:
