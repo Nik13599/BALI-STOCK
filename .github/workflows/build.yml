@@ -66,11 +66,11 @@ jobs:
       - name: Prepare Android installer
         run: |
           mkdir -p dist/android
-          cp build/app/outputs/flutter-apk/app-release.apk dist/android/BALI-STOCK-Android-v14.apk
+          cp build/app/outputs/flutter-apk/app-release.apk dist/android/BALI-STOCK-Android-v15.apk
       - uses: actions/upload-artifact@v4
         with:
           name: BALI-STOCK-Android-Installer
-          path: dist/android/BALI-STOCK-Android-v14.apk
+          path: dist/android/BALI-STOCK-Android-v15.apk
           if-no-files-found: error
 
   windows:
@@ -118,13 +118,13 @@ jobs:
         shell: pwsh
         run: |
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-          & $iscc "/DMyAppVersion=0.14.0" "installer/windows/bali_stock.iss"
+          & $iscc "/DMyAppVersion=0.15.0" "installer/windows/bali_stock.iss"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if (-not (Test-Path 'dist/windows/BALI-STOCK-Windows-v14-Setup.exe')) { throw "Setup EXE was not created" }
+          if (-not (Test-Path 'dist/windows/BALI-STOCK-Windows-v15-Setup.exe')) { throw "Setup EXE was not created" }
       - uses: actions/upload-artifact@v4
         with:
           name: BALI-STOCK-Windows-Installer
-          path: dist/windows/BALI-STOCK-Windows-v14-Setup.exe
+          path: dist/windows/BALI-STOCK-Windows-v15-Setup.exe
           if-no-files-found: error
 
   ios:
@@ -173,11 +173,11 @@ jobs:
       - name: Pack unsigned native iOS app
         run: |
           mkdir -p dist/ios
-          ditto -c -k --sequesterRsrc --keepParent build/ios/iphoneos/Runner.app dist/ios/BALI-STOCK-iOS-v14-unsigned.app.zip
+          ditto -c -k --sequesterRsrc --keepParent build/ios/iphoneos/Runner.app dist/ios/BALI-STOCK-iOS-v15-unsigned.app.zip
       - uses: actions/upload-artifact@v4
         with:
           name: BALI-STOCK-iOS-unsigned
-          path: dist/ios/BALI-STOCK-iOS-v14-unsigned.app.zip
+          path: dist/ios/BALI-STOCK-iOS-v15-unsigned.app.zip
           if-no-files-found: error
 
   ios_webclip:
@@ -200,8 +200,9 @@ jobs:
           clip = profile['PayloadContent'][0]
           assert clip['PayloadType'] == 'com.apple.webClip.managed'
           assert clip['URL'].startswith('https://')
+          assert clip['URL'].endswith('/ios-web/launch-v15.html')
           assert clip['Icon']
-          print('mobileconfig OK:', clip['URL'])
+          print('mobileconfig V15 OK:', clip['URL'])
           PY
       - uses: actions/upload-artifact@v4
         with:
