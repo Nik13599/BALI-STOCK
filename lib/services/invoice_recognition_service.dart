@@ -13,11 +13,17 @@ class InvoiceRecognitionResult {
     required this.rawText,
     required this.lines,
     required this.unmatchedLines,
+    this.documentNumber,
+    this.supplierId,
+    this.supplierName,
   });
 
   final String rawText;
   final List<InvoiceRecognitionLine> lines;
   final List<String> unmatchedLines;
+  final String? documentNumber;
+  final String? supplierId;
+  final String? supplierName;
 }
 
 class InvoiceRecognitionService {
@@ -28,13 +34,19 @@ class InvoiceRecognitionService {
     required String imagePath,
     required List<Product> products,
     List<ProductSupplierLink> supplierLinks = const [],
+    List<StockSupplier> suppliers = const [],
   }) async {
     if (products.isEmpty) throw StateError('В складе нет позиций для сопоставления с накладной.');
     final text = await extractText(imagePath);
     if (text.trim().isEmpty) {
       throw StateError('На накладной не удалось распознать текст. Попробуйте сфотографировать документ ровнее и при хорошем освещении.');
     }
-    return parseText(text, products: products, supplierLinks: supplierLinks);
+    return parseText(
+      text,
+      products: products,
+      supplierLinks: supplierLinks,
+      suppliers: suppliers,
+    );
   }
 
   Future<String> extractText(String imagePath) async {
@@ -139,6 +151,7 @@ Write-Output $result.Text
     String rawText, {
     required List<Product> products,
     List<ProductSupplierLink> supplierLinks = const [],
+    List<StockSupplier> suppliers = const [],
   }) {
     final sourceLines = rawText
         .replaceAll('\r', '\n')
@@ -198,7 +211,52 @@ Write-Output $result.Text
     for (var i = 0; i < sourceLines.length; i++) {
       if (!used.contains(i) && !_looksLikeHeader(sourceLines[i])) unmatched.add(sourceLines[i]);
     }
-    return InvoiceRecognitionResult(rawText: rawText, lines: recognized, unmatchedLines: unmatched);
+
+    final supplier = _matchSupplier(sourceLines, suppliers);
+    return InvoiceRecognitionResult(
+      rawText: rawText,
+      lines: recognized,
+      unmatchedLines: unmatched,
+      documentNumber: _extractDocumentNumber(sourceLines),
+      supplierId: supplier?.id,
+      supplierName: supplier?.name,
+    );
+  }
+
+  StockSupplier? _matchSupplier(List<String> sourceLines, List<StockSupplier> suppliers) {
+    StockSupplier? best;
+    var bestScore = 0.0;
+    final header = sourceLines.take(30).toList(growable: false);
+    for (final supplier in suppliers.where((supplier) => supplier.active)) {
+      if (supplier.name.trim().length < 3) continue;
+      for (final line in header) {
+        final score = _nameScore(supplier.name, line);
+        if (score > bestScore) {
+          bestScore = score;
+          best = supplier;
+        }
+      }
+    }
+    return bestScore >= 0.72 ? best : null;
+  }
+
+  String? _extractDocumentNumber(List<String> sourceLines) {
+    final header = sourceLines.take(35);
+    final labeled = RegExp(
+      r'(?:ттн|тн|товарно[- ]транспортная\s+накладная|накладная|invoice)\s*(?:№|no\.?|n)?\s*[:#-]?\s*([a-zа-я0-9][a-zа-я0-9./_-]{1,30})',
+      caseSensitive: false,
+      unicode: true,
+    );
+    final numberOnly = RegExp(r'(?:№|no\.?)\s*([a-zа-я0-9][a-zа-я0-9./_-]{1,30})', caseSensitive: false, unicode: true);
+    const ignored = {'дата', 'от', 'номер', 'поставщик', 'покупатель', 'товар'};
+
+    for (final line in header) {
+      final match = labeled.firstMatch(line) ?? numberOnly.firstMatch(line);
+      final value = match?.group(1)?.trim();
+      if (value == null || value.isEmpty || ignored.contains(value.toLowerCase())) continue;
+      return value;
+    }
+    return null;
   }
 
   _QuantityGuess? _extractQuantity(Product product, List<String> lines) {
