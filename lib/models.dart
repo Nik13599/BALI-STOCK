@@ -1,4 +1,4 @@
-enum StockOperationType { delivery, stocktake, writeoff, transfer, correction }
+enum StockOperationType { delivery, stocktake, spotStocktake, writeoff, transfer, correction }
 
 enum StockUnit { ml, gram, piece }
 
@@ -8,6 +8,7 @@ extension StockOperationTypeX on StockOperationType {
   String get dbValue => switch (this) {
         StockOperationType.delivery => 'delivery',
         StockOperationType.stocktake => 'stocktake',
+        StockOperationType.spotStocktake => 'spot_stocktake',
         StockOperationType.writeoff => 'writeoff',
         StockOperationType.transfer => 'transfer',
         StockOperationType.correction => 'correction',
@@ -16,6 +17,7 @@ extension StockOperationTypeX on StockOperationType {
   String get displayName => switch (this) {
         StockOperationType.delivery => 'Поставка',
         StockOperationType.stocktake => 'Переучёт',
+        StockOperationType.spotStocktake => 'Точечный переучёт',
         StockOperationType.writeoff => 'Списание',
         StockOperationType.transfer => 'Перемещение',
         StockOperationType.correction => 'Корректировка',
@@ -23,6 +25,8 @@ extension StockOperationTypeX on StockOperationType {
 
   static StockOperationType fromDb(String? value) => switch (value) {
         'delivery' => StockOperationType.delivery,
+        'stocktake' => StockOperationType.stocktake,
+        'spot_stocktake' => StockOperationType.spotStocktake,
         'writeoff' => StockOperationType.writeoff,
         'transfer' => StockOperationType.transfer,
         'correction' => StockOperationType.correction,
