@@ -83,14 +83,9 @@ jobs:
         with:
           channel: stable
           cache: true
-      - run: flutter config --enable-windows-desktop
-      - run: flutter create . --project-name bali_stock --org com.bali.stock --platforms=windows,android,ios
-      - run: flutter pub get
-      - run: dart run flutter_launcher_icons
-      - run: flutter build windows --release
-      - name: Bundle Microsoft VC++ runtime
+      - name: Build Windows release bundle
         shell: pwsh
-        run: ./tool/bundle_windows_vc_runtime.ps1
+        run: ./tool/build_windows_release.ps1
       - name: Install Inno Setup when missing
         shell: pwsh
         run: |
