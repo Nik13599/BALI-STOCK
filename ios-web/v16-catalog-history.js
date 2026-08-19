@@ -1,6 +1,6 @@
 (function () {
   'use strict';
-  window.__BALI_STOCK_V16_CATALOG_HISTORY__ = '16.0';
+  window.__BALI_STOCK_V16_CATALOG_HISTORY__ = '16.1';
 
   var CATALOG_API = 'https://mvnxfouyoynqyjdpcblh.supabase.co/functions/v1/bali-stock-catalog-api';
   var previousRender = render;
@@ -25,15 +25,21 @@
     var c = String(a.category_name || '').localeCompare(String(b.category_name || ''),'ru');
     return c || String(a.name || '').localeCompare(String(b.name || ''),'ru');
   }
-  async function catalogPost(employee, items) {
+  async function catalogRequest(body) {
     var response = await fetch(CATALOG_API, {
       method:'POST',
       headers:{apikey:KEY,Accept:'application/json','Content-Type':'application/json'},
-      body:JSON.stringify({action:'catalog_product_batch',employee:clean(employee),items:items})
+      body:JSON.stringify(body)
     });
     var data = await response.json().catch(function(){return {};});
     if (!response.ok) throw Error(data.error || ('HTTP '+response.status));
     return data;
+  }
+  function catalogPost(employee, items) {
+    return catalogRequest({action:'catalog_product_batch',employee:clean(employee),items:items});
+  }
+  function catalogDelete(employee, product) {
+    return catalogRequest({action:'product_delete',employee:clean(employee),product_key:productKey(product)});
   }
 
   function payloadFromProduct(p, values) {
@@ -57,10 +63,32 @@
     };
   }
 
+  async function deleteProduct(product) {
+    if (init(product) && qty(product) !== 0) {
+      toast('Нельзя удалить товар с ненулевым остатком. Сначала проведите переучёт и установите остаток 0.', true);
+      return;
+    }
+    var ok = await confirmBox(
+      'Удалить товар?',
+      '«'+clean(product.name)+'» исчезнет из текущего склада, поиска, поставок, закупок и новых переучётов. Проведённая история операций сохранится. Восстановление кнопкой отмены невозможно.'
+    );
+    if (!ok) return;
+    var employee = await ask('Кто удаляет товар?');
+    if (!employee) return;
+    try {
+      await catalogDelete(employee, product);
+      await snapshot();
+      toast('Товар удалён. История операций сохранена.');
+      openCatalogManager();
+    } catch(e) {
+      toast(String(e&&e.message?e.message:e), true);
+    }
+  }
+
   function openCatalogManager() {
     var items = (S.products || []).filter(function(p){return p.active !== false;}).sort(productSort);
     openModal('<h2>Редактирование склада</h2>'+
-      '<div class="muted">Пароль не требуется. Закупочная цена вручную не меняется — она обновляется только фактической поставкой.</div>'+
+      '<div class="muted">Пароль не требуется. Можно добавлять, менять и удалять товары. Удаление разрешено только при нулевом остатке; проведённая история сохраняется. Закупочная цена меняется только фактической поставкой.</div>'+
       '<button id="v16AddProduct" style="width:100%;margin-top:12px">+ ДОБАВИТЬ НОВЫЙ ТОВАР</button>'+
       '<input id="v16CatalogSearch" class="input" style="margin-top:10px" placeholder="Поиск товара, категории или кода">'+
       '<div id="v16CatalogList" style="margin-top:10px"></div>'+
@@ -71,9 +99,11 @@
       var filtered = items.filter(function(p){return !q || lower(p.name+' '+p.category_name+' '+(p.barcode||'')).indexOf(q)>=0;});
       var box = document.getElementById('v16CatalogList');
       box.innerHTML = filtered.slice(0,220).map(function(p){
-        return '<button class="listbtn v16EditProduct" data-key="'+h(productKey(p))+'"><div class="name">'+h(p.name)+'</div><div class="muted" style="color:#39ff6a">'+h(p.category_name)+'</div><div class="muted">'+h(p.stock_unit==='pcs'?'1 шт.':p.package_size+' '+(p.stock_unit==='g'?'г':'мл'))+' • код '+h(p.barcode||'—')+'</div></button>';
+        var key=h(productKey(p));
+        return '<div class="card" style="margin:7px 0"><div class="name">'+h(p.name)+'</div><div class="muted" style="color:#39ff6a">'+h(p.category_name)+'</div><div class="muted">'+h(p.stock_unit==='pcs'?'1 шт.':p.package_size+' '+(p.stock_unit==='g'?'г':'мл'))+' • код '+h(p.barcode||'—')+'</div><div class="toolbar" style="margin-top:8px"><button class="secondary v16EditProduct" data-key="'+key+'">Настроить</button><button class="secondary v16DeleteProduct" data-key="'+key+'">Удалить товар</button></div></div>';
       }).join('') || '<div class="card">Ничего не найдено.</div>';
       box.querySelectorAll('.v16EditProduct').forEach(function(b){b.onclick=function(){var p=(S.products||[]).find(function(x){return productKey(x)===b.dataset.key;});if(p)openProductEditor(p);};});
+      box.querySelectorAll('.v16DeleteProduct').forEach(function(b){b.onclick=function(){var p=(S.products||[]).find(function(x){return productKey(x)===b.dataset.key;});if(p)deleteProduct(p);};});
     }
     document.getElementById('v16CatalogSearch').oninput = draw;
     document.getElementById('v16AddProduct').onclick = function(){openProductEditor(null);};
