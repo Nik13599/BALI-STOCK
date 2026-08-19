@@ -16,6 +16,44 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Validate iPhone launcher and compact product card
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          source = Path('ios-web/launch-v14-3.html').read_text(encoding='utf-8')
+          required = [
+              '__BALI_V14_COMPACT_PRODUCT_CARD__',
+              'window.v14ShowProduct=compact',
+              'ПЕРЕУЧЕСТЬ ТОВАР',
+              '<summary>Экономика</summary>',
+              '<summary>История карточки</summary>',
+              '@media(max-width:520px)',
+          ]
+          missing = [item for item in required if item not in source]
+          if missing:
+              raise SystemExit(f'Compact product-card launcher contract missing: {missing!r}')
+
+          outer = re.findall(r'<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)</script>', source, flags=re.I)
+          if not outer:
+              raise SystemExit('Launcher inline JavaScript not found')
+          for index, script in enumerate(outer):
+              Path(f'/tmp/bali-launcher-outer-{index}.js').write_text(script, encoding='utf-8')
+
+          nested = re.search(
+              r'const compactProductCard = `<script[^>]*>\n([\s\S]*?)\n<\\/script>`;',
+              source,
+          )
+          if not nested:
+              raise SystemExit('Nested compact product-card script not found')
+          Path('/tmp/bali-launcher-compact-card.js').write_text(nested.group(1), encoding='utf-8')
+          print(f'Launcher contract OK; outer scripts={len(outer)}')
+          PY
+          for file in /tmp/bali-launcher-outer-*.js /tmp/bali-launcher-compact-card.js; do
+            echo "Checking $file"
+            node --check "$file"
+          done
       - name: Fetch production iPhone runtime
         run: |
           curl --fail --silent --show-error \
