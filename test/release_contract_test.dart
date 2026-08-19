@@ -54,22 +54,20 @@ void main() {
     expect(history.contains('operation, required this.onPdf, required this.onOpen, required this.onDelete'), isFalse);
   });
 
-  test('iPhone profile uses the V16 production launcher on the stabilized runtime', () {
+  test('iPhone production profile is hosted outside the private GitHub repository', () {
     final generator = File('tool/generate_mobileconfig.py').readAsStringSync();
-    final launcher = File('ios-web/launch-v16.html').readAsStringSync();
     final catalog = File('ios-web/v16-catalog-history.js').readAsStringSync();
     final ui = File('ios-web/v15-ui.js').readAsStringSync();
     final delivery = File('ios-web/v15-delivery-link.js').readAsStringSync();
+    final smoke = File('.github/workflows/iphone-runtime-smoke.yml').readAsStringSync();
 
-    expect(generator.contains('/BALI-STOCK/production/ios-web/launch-v16.html'), isTrue);
+    expect(generator.contains('supabase.co/functions/v1/bali-stock-ios-runtime'), isTrue);
+    expect(generator.contains('raw.githack.com'), isFalse);
+    expect(generator.contains('raw.githubusercontent.com'), isFalse);
     expect(generator.contains('production-версию BALI STOCK'), isTrue);
-    expect(launcher.contains('bali-stock-ios-runtime'), isTrue);
-    expect(launcher.contains('/BALI-STOCK/production/ios-web/'), isTrue);
-    expect(launcher.contains('v16-catalog-history.js'), isTrue);
-    expect(launcher.contains('return,[A-Za-z_\$][A-Za-z0-9_\$]*='), isTrue);
-    expect(launcher.contains('async function snapshot'), isTrue);
+    expect(smoke.contains("assert data['github_dependency'] is False"), isTrue);
+    expect(smoke.contains("assert data['password_prompt'] is False"), isTrue);
     expect(catalog.contains('__BALI_STOCK_V16_CATALOG_HISTORY__'), isTrue);
-    expect(catalog.contains('Пароль не требуется'), isTrue);
     expect(catalog.contains('ДОБАВИТЬ НОВЫЙ ТОВАР'), isTrue);
     expect(catalog.contains("api('draft_delete'"), isTrue);
     expect(ui.contains('__BALI_STOCK_V15_UI__'), isTrue);
