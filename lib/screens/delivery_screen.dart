@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../controller.dart';
 import '../models.dart';
 import '../widgets/bali_nav_icon.dart';
 import '../widgets/common.dart';
@@ -146,5 +147,74 @@ Future<DeliveryDraftLine?> showDeliveryLineDialog(
   whole.dispose();
   extra.dispose();
   cost.dispose();
+  return result;
+}
+
+Future<String?> showSupplierDialog(BuildContext context, WarehouseController controller) async {
+  final name = TextEditingController();
+  final contact = TextEditingController();
+  final phone = TextEditingController();
+  final email = TextEditingController();
+  final notes = TextEditingController();
+  var saving = false;
+  final result = await showDialog<String>(
+    context: context,
+    barrierDismissible: false,
+    builder: (dialogContext) => StatefulBuilder(
+      builder: (context, setState) => AlertDialog(
+        title: const Text('Новый поставщик'),
+        content: SizedBox(
+          width: 560,
+          child: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              TextField(controller: name, autofocus: true, decoration: const InputDecoration(labelText: 'Название *')),
+              const SizedBox(height: 10),
+              TextField(controller: contact, decoration: const InputDecoration(labelText: 'Контактное лицо')),
+              const SizedBox(height: 10),
+              TextField(controller: phone, decoration: const InputDecoration(labelText: 'Телефон')),
+              const SizedBox(height: 10),
+              TextField(controller: email, decoration: const InputDecoration(labelText: 'E-mail')),
+              const SizedBox(height: 10),
+              TextField(controller: notes, maxLines: 2, decoration: const InputDecoration(labelText: 'Примечание')),
+            ]),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: saving ? null : () => Navigator.pop(dialogContext), child: const Text('Отмена')),
+          FilledButton.icon(
+            onPressed: saving
+                ? null
+                : () async {
+                    if (name.text.trim().isEmpty) {
+                      showErrorSnack(dialogContext, 'Введите название поставщика');
+                      return;
+                    }
+                    setState(() => saving = true);
+                    try {
+                      final id = await controller.addSupplier(
+                        name: name.text.trim(),
+                        contactPerson: contact.text.trim().isEmpty ? null : contact.text.trim(),
+                        phone: phone.text.trim().isEmpty ? null : phone.text.trim(),
+                        email: email.text.trim().isEmpty ? null : email.text.trim(),
+                        notes: notes.text.trim().isEmpty ? null : notes.text.trim(),
+                      );
+                      if (dialogContext.mounted) Navigator.pop(dialogContext, id);
+                    } catch (e) {
+                      if (dialogContext.mounted) showErrorSnack(dialogContext, e);
+                      setState(() => saving = false);
+                    }
+                  },
+            icon: saving ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.add_business),
+            label: const Text('Добавить'),
+          ),
+        ],
+      ),
+    ),
+  );
+  name.dispose();
+  contact.dispose();
+  phone.dispose();
+  email.dispose();
+  notes.dispose();
   return result;
 }
