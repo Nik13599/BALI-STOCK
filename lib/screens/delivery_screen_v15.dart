@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:math' as math;
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
@@ -27,19 +26,16 @@ class DeliveryScreenV15 extends StatefulWidget {
 }
 
 class _DeliveryScreenV15State extends State<DeliveryScreenV15> {
-  final Map<int, DeliveryDraftLine> _lines = <int, DeliveryDraftLine>{};
-  final TextEditingController _employee = TextEditingController();
-  final TextEditingController _document = TextEditingController();
-  final TextEditingController _comment = TextEditingController();
-  final TextEditingController _productSearch = TextEditingController();
-  final InvoiceRecognitionServiceV15 _recognizer = InvoiceRecognitionServiceV15();
-  final RemoteStockService _remote = RemoteStockService();
-  final ImagePicker _picker = ImagePicker();
+  final _lines = <int, DeliveryDraftLine>{};
+  final _employee = TextEditingController();
+  final _document = TextEditingController();
+  final _comment = TextEditingController();
+  final _search = TextEditingController();
+  final _recognizer = InvoiceRecognitionServiceV15();
+  final _remote = RemoteStockService();
+  final _picker = ImagePicker();
 
   List<StockPurchaseRequest> _requests = const [];
-  bool _saving = false;
-  bool _recognizing = false;
-  bool _loadingRequests = false;
   String? _supplierId;
   String? _locationId;
   String? _purchaseRequestId;
@@ -47,12 +43,15 @@ class _DeliveryScreenV15State extends State<DeliveryScreenV15> {
   String? _rawOcrText;
   DateTime? _recognizedDocumentDate;
   double? _documentConfidence;
+  bool _saving = false;
+  bool _recognizing = false;
+  bool _loadingRequests = false;
   int _visibleLineLimit = 35;
 
   @override
   void initState() {
     super.initState();
-    _productSearch.addListener(_refreshSearch);
+    _search.addListener(_rebuild);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       setState(() => _locationId = widget.controller.primaryLocation?.id);
@@ -62,74 +61,105 @@ class _DeliveryScreenV15State extends State<DeliveryScreenV15> {
 
   @override
   void dispose() {
-    _productSearch.removeListener(_refreshSearch);
+    _search.removeListener(_rebuild);
     _employee.dispose();
     _document.dispose();
     _comment.dispose();
-    _productSearch.dispose();
+    _search.dispose();
     super.dispose();
   }
 
-  void _refreshSearch() {
+  void _rebuild() {
     if (mounted) setState(() {});
   }
 
-  String _key(Product product) => _remote.productKey(name: product.name, unit: product.stockUnit, packageSize: product.packageSize);
+  int _initialVisibleLimit(int count) {
+    if (count <= 35) return 35;
+    return count < 70 ? count : 70;
+  }
+
+  String _productKey(Product product) => _remote.productKey(
+        name: product.name,
+        unit: product.stockUnit,
+        packageSize: product.packageSize,
+      );
+
+  Product? _productForKey(String key) =>
+      widget.controller.products.where((product) => _productKey(product) == key).firstOrNull;
+
+  StockSupplier? _supplier(String? id) => id == null
+      ? null
+      : widget.controller.suppliers.where((supplier) => supplier.active && supplier.id == id).firstOrNull;
 
   Future<void> _reloadRequests() async {
     if (_loadingRequests) return;
     setState(() => _loadingRequests = true);
     try {
-      final requests = await _remote.fetchPurchaseRequestsV15();
-      if (mounted) setState(() => _requests = requests.where((x) => x.canReceive).toList(growable: false));
+      final values = await _remote.fetchPurchaseRequestsV15();
+      if (mounted) setState(() => _requests = values.where((request) => request.canReceive).toList(growable: false));
     } catch (_) {
-      // Delivery remains fully usable without the optional request selector.
+      // Заявка — дополнительный сценарий. Обычная поставка остаётся доступна.
     } finally {
       if (mounted) setState(() => _loadingRequests = false);
     }
   }
 
-  Product? _productForKey(String key) => widget.controller.products.where((p) => _key(p) == key).firstOrNull;
-
-  StockSupplier? _supplier(String? id) => id == null ? null : widget.controller.suppliers.where((x) => x.active && x.id == id).firstOrNull;
-
-  Future<void> _selectRequest(String? requestId) async {
-    if (requestId == null) {
+  Future<void> _selectRequest(String? id) async {
+    if (id == null) {
       setState(() => _purchaseRequestId = null);
       return;
     }
-    final request = _requests.where((x) => x.id == requestId).firstOrNull;
+    final request = _requests.where((value) => value.id == id).firstOrNull;
     if (request == null) return;
-    final incoming = <int, DeliveryDraftLine>{};
-    for (final line in request.lines) {
-      if (line.outstandingQuantity <= 0) continue;
-      final product = _productForKey(line.productKey);
+    final prefilled = <int, DeliveryDraftLine>{};
+    for (final requestLine in request.lines) {
+      final outstanding = requestLine.outstandingQuantity;
+      if (outstanding <= 0) continue;
+      final product = _productForKey(requestLine.productKey);
       if (product == null) continue;
-      final quantity = line.outstandingQuantity;
-      final whole = product.stockUnit == StockUnit.piece ? quantity : quantity ~/ product.packageSize;
-      final extra = product.stockUnit == StockUnit.piece ? 0 : quantity % product.packageSize;
-      incoming[product.id] = DeliveryDraftLine(product: product, bottles: whole, extraMl: extra, unitCost: line.unitCost, manuallyCorrected: true);
+      final whole = product.stockUnit == StockUnit.piece ? outstanding : outstanding ~/ product.packageSize;
+      final extra = product.stockUnit == StockUnit.piece ? 0 : outstanding % product.packageSize;
+      prefilled[product.id] = DeliveryDraftLine(
+        product: product,
+        bottles: whole,
+        extraMl: extra,
+        unitCost: requestLine.unitCost,
+        sourceText: request.shortNumber,
+        manuallyCorrected: true,
+      );
     }
     setState(() {
       _purchaseRequestId = request.id;
       _supplierId = request.supplierId;
       _lines
         ..clear()
-        ..addAll(incoming);
-      _visibleLineLimit = math.max(35, math.min(incoming.length, 70));
+        ..addAll(prefilled);
+      _visibleLineLimit = _initialVisibleLimit(prefilled.length);
     });
   }
 
-  Future<void> _addLine([DeliveryDraftLine? initial, Product? preselectedProduct, bool scanWorkflow = false]) async {
+  Future<void> _addLine({Product? product, bool scanWorkflow = false}) async {
+    final initial = product == null ? null : _lines[product.id];
     final line = await legacy.showDeliveryLineDialog(
       context,
       widget.controller.products,
       initial: initial,
-      preselectedProduct: preselectedProduct,
+      preselectedProduct: product,
       scanWorkflow: scanWorkflow,
     );
     if (line == null || !mounted) return;
     setState(() => _lines[line.product.id] = line);
+  }
+
+  Future<void> _editLine(DeliveryDraftLine line) async {
+    final edited = await legacy.showDeliveryLineDialog(
+      context,
+      widget.controller.products,
+      initial: line,
+      preselectedProduct: line.product,
+    );
+    if (edited == null || !mounted) return;
+    setState(() => _lines[edited.product.id] = edited);
   }
 
   Future<void> _manualProductCode() async {
@@ -140,7 +170,7 @@ class _DeliveryScreenV15State extends State<DeliveryScreenV15> {
       showErrorSnack(context, 'Код товара ${code.trim()} не привязан ни к одной позиции.');
       return;
     }
-    await _addLine(_lines[product.id], product);
+    await _addLine(product: product);
   }
 
   Future<void> _scanProductWorkflow() async {
@@ -152,10 +182,11 @@ class _DeliveryScreenV15State extends State<DeliveryScreenV15> {
         showErrorSnack(context, 'Код товара ${code.trim()} не привязан ни к одной позиции.');
         continue;
       }
+      final before = _lines[product.id];
       final line = await legacy.showDeliveryLineDialog(
         context,
         widget.controller.products,
-        initial: _lines[product.id],
+        initial: before,
         preselectedProduct: product,
         scanWorkflow: true,
       );
@@ -165,19 +196,12 @@ class _DeliveryScreenV15State extends State<DeliveryScreenV15> {
   }
 
   List<Product> _searchResults() {
-    final query = _productSearch.text.trim().toLowerCase();
+    final query = _search.text.trim().toLowerCase();
     if (query.isEmpty) return const [];
     return widget.controller.products
         .where((p) => '${p.name} ${p.categoryName} ${p.barcode ?? ''}'.toLowerCase().contains(query))
         .take(15)
         .toList(growable: false);
-  }
-
-  XTypeGroup _invoiceTypeGroup() {
-    if (Platform.isWindows) {
-      return const XTypeGroup(label: 'Накладная', extensions: ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'tif', 'tiff']);
-    }
-    return const XTypeGroup(label: 'Накладная', mimeTypes: ['image/jpeg', 'image/png', 'image/webp'], uniformTypeIdentifiers: ['public.image']);
   }
 
   Future<XFile?> _pickInvoice({required bool camera}) async {
@@ -191,14 +215,16 @@ class _DeliveryScreenV15State extends State<DeliveryScreenV15> {
       );
     }
     if (camera) return null;
-    return openFile(acceptedTypeGroups: [_invoiceTypeGroup()]);
+    final typeGroup = Platform.isWindows
+        ? const XTypeGroup(label: 'Накладная', extensions: ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'tif', 'tiff'])
+        : const XTypeGroup(label: 'Накладная', mimeTypes: ['image/jpeg', 'image/png', 'image/webp'], uniformTypeIdentifiers: ['public.image']);
+    return openFile(acceptedTypeGroups: [typeGroup]);
   }
 
   Future<void> _scanInvoice({required bool camera}) async {
     if (_recognizing || _saving) return;
-    XFile? file;
     try {
-      file = await _pickInvoice(camera: camera);
+      final file = await _pickInvoice(camera: camera);
       if (file == null || !mounted) return;
       setState(() => _recognizing = true);
       await Future<void>.delayed(const Duration(milliseconds: 80));
@@ -214,26 +240,29 @@ class _DeliveryScreenV15State extends State<DeliveryScreenV15> {
         imported[line.product.id] = line.toDeliveryLine();
       }
       setState(() {
-        _invoicePath = file!.path;
+        _invoicePath = file.path;
         _rawOcrText = result.rawText;
         _recognizedDocumentDate = result.documentDate;
         _documentConfidence = result.documentConfidence;
         _lines
           ..clear()
           ..addAll(imported);
-        _visibleLineLimit = math.max(35, math.min(imported.length, 70));
+        _visibleLineLimit = _initialVisibleLimit(imported.length);
         if (result.supplierId != null) _supplierId = result.supplierId;
-        if (result.documentNumber != null && result.documentNumber!.trim().isNotEmpty) _document.text = result.documentNumber!.trim();
+        final number = result.documentNumber?.trim();
+        if (number != null && number.isNotEmpty) _document.text = number;
       });
-      final doubtful = result.lines.where((line) => line.confidence < .72 || line.unitCost == null).length;
-      final unknownSupplier = result.supplierId == null && result.supplierText?.trim().isNotEmpty == true ? ' • поставщик «${result.supplierText}» не найден в списке' : '';
+      final reviewCount = result.lines.where((line) => line.confidence < .72 || line.unitCost == null).length;
+      final supplierHint = result.supplierId == null && result.supplierText?.trim().isNotEmpty == true
+          ? ' • поставщик «${result.supplierText}» не найден в списке'
+          : '';
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Накладная распознана: ${result.lines.length} поз.${doubtful > 0 ? ' • проверить: $doubtful' : ''}$unknownSupplier'),
+        content: Text('Накладная распознана: ${result.lines.length} поз.${reviewCount > 0 ? ' • проверить: $reviewCount' : ''}$supplierHint'),
       ));
     } on InvoiceNotRecognizedException catch (e) {
       if (mounted) showErrorSnack(context, e.toString());
     } catch (e) {
-      if (mounted) showErrorSnack(context, 'Не удалось распознать накладную. ${e.toString()}');
+      if (mounted) showErrorSnack(context, 'Не удалось распознать накладную. $e');
     } finally {
       if (mounted) setState(() => _recognizing = false);
     }
@@ -246,15 +275,18 @@ class _DeliveryScreenV15State extends State<DeliveryScreenV15> {
     return 'image/jpeg';
   }
 
-  Future<String?> _archiveInvoiceIfPresent() async {
+  Future<String?> _archiveInvoice() async {
     final path = _invoicePath;
     if (path == null) return null;
     final file = File(path);
     if (!await file.exists()) return null;
     final bytes = await file.readAsBytes();
     if (bytes.isEmpty) return null;
-    final fileName = path.split(Platform.pathSeparator).last;
-    return widget.controller.uploadInvoiceAttachment(bytes: bytes, fileName: fileName, mimeType: _mimeForPath(path));
+    return widget.controller.uploadInvoiceAttachment(
+      bytes: bytes,
+      fileName: path.split(Platform.pathSeparator).last,
+      mimeType: _mimeForPath(path),
+    );
   }
 
   Future<void> _submit() async {
@@ -267,41 +299,41 @@ class _DeliveryScreenV15State extends State<DeliveryScreenV15> {
       showErrorSnack(context, 'Выберите поставщика из списка.');
       return;
     }
-    if (_locationId == null && widget.controller.locations.any((x) => x.active)) {
+    if (_locationId == null && widget.controller.locations.any((value) => value.active)) {
       showErrorSnack(context, 'Выберите склад.');
       return;
     }
     final missingPrice = _lines.values.where((line) => line.unitCost == null).length;
     if (missingPrice > 0) {
-      showErrorSnack(context, 'У $missingPrice позиций не заполнена закупочная цена. Проверьте накладную и заполните цену.');
+      showErrorSnack(context, 'У $missingPrice позиций не заполнена закупочная цена.');
       return;
     }
-    final lowConfidence = _lines.values.where((line) => (line.confidence ?? 1) < .55 && !line.manuallyCorrected).length;
-    if (lowConfidence > 0) {
-      final proceed = await showDialog<bool>(
+    final doubtful = _lines.values.where((line) => (line.confidence ?? 1) < .55 && !line.manuallyCorrected).length;
+    if (doubtful > 0) {
+      final checked = await showDialog<bool>(
         context: context,
         builder: (dialogContext) => AlertDialog(
           title: const Text('Проверьте распознанные позиции'),
-          content: Text('$lowConfidence позиций имеют низкую уверенность распознавания.'),
+          content: Text('$doubtful позиций имеют низкую уверенность распознавания.'),
           actions: [
             TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Вернуться')),
             FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Я проверил')),
           ],
         ),
       );
-      if (proceed != true) return;
+      if (checked != true) return;
     }
 
     setState(() => _saving = true);
     try {
-      final attachmentPath = await _archiveInvoiceIfPresent();
+      final attachment = await _archiveInvoice();
       String? scanId;
-      if ((_rawOcrText?.trim().isNotEmpty ?? false)) {
+      if (_rawOcrText?.trim().isNotEmpty == true) {
         scanId = await widget.controller.saveInvoiceScan(
           employee: _employee.text.trim(),
           supplierId: _supplierId,
           documentNumber: _document.text.trim().isEmpty ? null : _document.text.trim(),
-          attachmentUrl: attachmentPath,
+          attachmentUrl: attachment,
           rawText: _rawOcrText!,
           lines: _lines.values.toList(growable: false),
         );
@@ -312,7 +344,7 @@ class _DeliveryScreenV15State extends State<DeliveryScreenV15> {
         supplierId: _supplierId,
         documentNumber: _document.text.trim().isEmpty ? null : _document.text.trim(),
         comment: _comment.text.trim().isEmpty ? null : _comment.text.trim(),
-        attachmentUrl: attachmentPath,
+        attachmentUrl: attachment,
         locationId: _locationId,
         metadata: {
           if (scanId?.isNotEmpty == true) 'invoice_scan_id': scanId,
@@ -320,7 +352,7 @@ class _DeliveryScreenV15State extends State<DeliveryScreenV15> {
           if (_recognizedDocumentDate != null) 'invoice_date': _recognizedDocumentDate!.toIso8601String(),
           if (_documentConfidence != null) 'invoice_document_confidence': _documentConfidence,
           'ocr_used': _rawOcrText?.trim().isNotEmpty == true,
-          'invoice_archived': attachmentPath?.isNotEmpty == true,
+          'invoice_archived': attachment?.isNotEmpty == true,
         },
       );
       if (!mounted) return;
@@ -334,7 +366,7 @@ class _DeliveryScreenV15State extends State<DeliveryScreenV15> {
         _purchaseRequestId = null;
         _document.clear();
         _comment.clear();
-        _productSearch.clear();
+        _search.clear();
         _visibleLineLimit = 35;
       });
       await _reloadRequests();
@@ -355,16 +387,16 @@ class _DeliveryScreenV15State extends State<DeliveryScreenV15> {
         animation: widget.controller,
         builder: (context, _) {
           final products = widget.controller.products;
-          final notInitialized = products.where((p) => !p.stockInitialized).length;
-          final content = products.isEmpty
+          final uninitialized = products.where((product) => !product.stockInitialized).length;
+          final page = products.isEmpty
               ? const EmptyState(icon: Icons.local_shipping_outlined, title: 'Нет складских позиций', message: 'Сначала добавьте позиции в разделе «Склад».')
-              : notInitialized > 0
-                  ? EmptyState(icon: Icons.fact_check_outlined, title: 'Сначала проведите первичный переучёт', message: 'У $notInitialized позиций ещё не введён фактический остаток.')
+              : uninitialized > 0
+                  ? EmptyState(icon: Icons.fact_check_outlined, title: 'Сначала проведите первичный переучёт', message: 'У $uninitialized позиций ещё не введён фактический остаток.')
                   : _body();
           return Scaffold(
             appBar: AppBar(title: const Text('Поставка')),
             body: Stack(children: [
-              Positioned.fill(child: IgnorePointer(ignoring: _recognizing, child: content)),
+              Positioned.fill(child: IgnorePointer(ignoring: _recognizing, child: page)),
               if (_recognizing) Positioned.fill(child: _recognitionOverlay()),
             ]),
           );
@@ -375,10 +407,10 @@ class _DeliveryScreenV15State extends State<DeliveryScreenV15> {
         color: Colors.black.withValues(alpha: .72),
         alignment: Alignment.center,
         padding: const EdgeInsets.all(24),
-        child: Card(
+        child: const Card(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
-            child: Column(mainAxisSize: MainAxisSize.min, children: const [
+            padding: EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
               SizedBox(width: 38, height: 38, child: CircularProgressIndicator(strokeWidth: 3)),
               SizedBox(height: 16),
               Text('Распознаю накладную…', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
@@ -390,7 +422,7 @@ class _DeliveryScreenV15State extends State<DeliveryScreenV15> {
       );
 
   Widget _body() {
-    final searchResults = _searchResults();
+    final results = _searchResults();
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 980),
@@ -410,23 +442,27 @@ class _DeliveryScreenV15State extends State<DeliveryScreenV15> {
             ]),
             const SizedBox(height: 9),
             TextField(
-              controller: _productSearch,
-              decoration: InputDecoration(prefixIcon: const Icon(Icons.search), labelText: 'Найти по названию или коду', suffixIcon: _productSearch.text.isEmpty ? null : IconButton(onPressed: _productSearch.clear, icon: const Icon(Icons.clear))),
+              controller: _search,
+              decoration: InputDecoration(
+                prefixIcon: const Icon(Icons.search),
+                labelText: 'Найти по названию или коду',
+                suffixIcon: _search.text.isEmpty ? null : IconButton(onPressed: _search.clear, icon: const Icon(Icons.clear)),
+              ),
             ),
-            if (_productSearch.text.trim().isNotEmpty) ...[
+            if (_search.text.trim().isNotEmpty) ...[
               const SizedBox(height: 7),
               Card(
-                child: searchResults.isEmpty
+                child: results.isEmpty
                     ? const Padding(padding: EdgeInsets.all(16), child: Text('Совпадений нет.'))
                     : Column(children: [
-                        for (var i = 0; i < searchResults.length; i++) ...[
+                        for (var i = 0; i < results.length; i++) ...[
                           ListTile(
-                            title: Text(searchResults[i].name, style: const TextStyle(fontWeight: FontWeight.w800)),
-                            subtitle: Text('${searchResults[i].categoryName}${searchResults[i].barcode?.trim().isNotEmpty == true ? ' • код ${searchResults[i].barcode}' : ''}'),
-                            trailing: Chip(label: Text(_lines.containsKey(searchResults[i].id) ? 'ДОБАВЛЕНО' : 'ДОБАВИТЬ')),
-                            onTap: _saving ? null : () => _addLine(_lines[searchResults[i].id], searchResults[i]),
+                            title: Text(results[i].name, style: const TextStyle(fontWeight: FontWeight.w800)),
+                            subtitle: Text('${results[i].categoryName}${results[i].barcode?.trim().isNotEmpty == true ? ' • код ${results[i].barcode}' : ''}'),
+                            trailing: Chip(label: Text(_lines.containsKey(results[i].id) ? 'ДОБАВЛЕНО' : 'ДОБАВИТЬ')),
+                            onTap: _saving ? null : () => _addLine(product: results[i]),
                           ),
-                          if (i != searchResults.length - 1) const Divider(height: 1),
+                          if (i != results.length - 1) const Divider(height: 1),
                         ],
                       ]),
               ),
@@ -446,11 +482,12 @@ class _DeliveryScreenV15State extends State<DeliveryScreenV15> {
   }
 
   Widget _header() {
-    final suppliers = widget.controller.suppliers.where((x) => x.active).toList(growable: true)..sort((a, b) => a.name.compareTo(b.name));
-    final locations = widget.controller.locations.where((x) => x.active).toList(growable: false);
-    if (_supplierId != null && !suppliers.any((x) => x.id == _supplierId)) _supplierId = null;
+    final suppliers = widget.controller.suppliers.where((supplier) => supplier.active).toList(growable: true)
+      ..sort((a, b) => a.name.compareTo(b.name));
+    final locations = widget.controller.locations.where((location) => location.active).toList(growable: false);
+    if (_supplierId != null && !suppliers.any((supplier) => supplier.id == _supplierId)) _supplierId = null;
     if (_locationId == null && locations.isNotEmpty) _locationId = widget.controller.primaryLocation?.id ?? locations.first.id;
-    final requests = _requests.where((x) => x.canReceive).toList(growable: false);
+    final requests = _requests.where((request) => request.canReceive).toList(growable: false);
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -461,7 +498,10 @@ class _DeliveryScreenV15State extends State<DeliveryScreenV15> {
             initialValue: _supplierId,
             isExpanded: true,
             decoration: const InputDecoration(labelText: 'Поставщик *'),
-            items: [const DropdownMenuItem<String?>(value: null, child: Text('Выберите поставщика')), ...suppliers.map((x) => DropdownMenuItem<String?>(value: x.id, child: Text(x.name)))],
+            items: [
+              const DropdownMenuItem<String?>(value: null, child: Text('Выберите поставщика')),
+              ...suppliers.map((supplier) => DropdownMenuItem<String?>(value: supplier.id, child: Text(supplier.name))),
+            ],
             onChanged: _saving ? null : (value) => setState(() => _supplierId = value),
           ),
           const SizedBox(height: 10),
@@ -469,7 +509,7 @@ class _DeliveryScreenV15State extends State<DeliveryScreenV15> {
             DropdownButtonFormField<String>(
               initialValue: _locationId,
               decoration: const InputDecoration(labelText: 'Склад *'),
-              items: locations.map((x) => DropdownMenuItem(value: x.id, child: Text(x.isPrimary ? '${x.name} • основной' : x.name))).toList(growable: false),
+              items: locations.map((location) => DropdownMenuItem(value: location.id, child: Text(location.isPrimary ? '${location.name} • основной' : location.name))).toList(growable: false),
               onChanged: _saving ? null : (value) => setState(() => _locationId = value),
             ),
           if (locations.isNotEmpty) const SizedBox(height: 10),
@@ -480,7 +520,10 @@ class _DeliveryScreenV15State extends State<DeliveryScreenV15> {
               decoration: const InputDecoration(labelText: 'Заявка на закупку — при наличии'),
               items: [
                 const DropdownMenuItem<String?>(value: null, child: Text('Без привязки к заявке')),
-                ...requests.map((request) => DropdownMenuItem<String?>(value: request.id, child: Text('${request.shortNumber} • ${_supplier(request.supplierId)?.name ?? 'поставщик'}'))),
+                ...requests.map((request) => DropdownMenuItem<String?>(
+                      value: request.id,
+                      child: Text('${request.shortNumber} • ${_supplier(request.supplierId)?.name ?? 'поставщик'}'),
+                    )),
               ],
               onChanged: _saving ? null : _selectRequest,
             ),
@@ -527,7 +570,7 @@ class _DeliveryScreenV15State extends State<DeliveryScreenV15> {
     return Card(
       child: Column(children: [
         for (var i = 0; i < visible.length; i++) ...[
-          _deliveryLineTile(visible[i]),
+          _lineTile(visible[i]),
           if (i != visible.length - 1) const Divider(height: 1),
         ],
         if (values.length > visible.length)
@@ -541,7 +584,7 @@ class _DeliveryScreenV15State extends State<DeliveryScreenV15> {
     );
   }
 
-  Widget _deliveryLineTile(DeliveryDraftLine line) {
+  Widget _lineTile(DeliveryDraftLine line) {
     final confidence = line.confidence;
     final needsCheck = confidence != null && (confidence < .72 || line.unitCost == null) && !line.manuallyCorrected;
     return ListTile(
@@ -553,8 +596,15 @@ class _DeliveryScreenV15State extends State<DeliveryScreenV15> {
         if (confidence != null) Text(needsCheck ? 'OCR ${(confidence * 100).round()}% • ПРОВЕРИТЬ' : 'OCR ${(confidence * 100).round()}%'),
       ]),
       trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-        ConstrainedBox(maxWidth: 125, child: Text('+${formatStockParts(line.addedMl, line.product.packageSize, line.product.stockUnit)}', textAlign: TextAlign.right, style: const TextStyle(fontWeight: FontWeight.w900))),
-        IconButton(onPressed: _saving ? null : () => _addLine(line, line.product), tooltip: 'Проверить', icon: const Icon(Icons.edit_outlined)),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 125),
+          child: Text(
+            '+${formatStockParts(line.addedMl, line.product.packageSize, line.product.stockUnit)}',
+            textAlign: TextAlign.right,
+            style: const TextStyle(fontWeight: FontWeight.w900),
+          ),
+        ),
+        IconButton(onPressed: _saving ? null : () => _editLine(line), tooltip: 'Проверить', icon: const Icon(Icons.edit_outlined)),
         IconButton(onPressed: _saving ? null : () => setState(() => _lines.remove(line.product.id)), tooltip: 'Удалить', icon: const Icon(Icons.delete_outline)),
       ]),
     );
