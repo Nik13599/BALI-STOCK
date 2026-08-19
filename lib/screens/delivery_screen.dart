@@ -11,6 +11,7 @@ import '../services/pdf_export_service.dart';
 import '../widgets/bali_nav_icon.dart';
 import '../widgets/common.dart';
 import '../widgets/product_code_actions.dart';
+import '../widgets/voice_input_button.dart';
 
 class DeliveryScreen extends StatefulWidget {
   const DeliveryScreen({super.key, required this.controller});
@@ -128,12 +129,14 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
     return const XTypeGroup(label: 'Изображение накладной', mimeTypes: ['image/jpeg', 'image/png', 'image/webp', 'image/bmp', 'image/tiff']);
   }
 
-  Future<void> _scanInvoice({required bool camera}) async {
+  Future<void> _scanInvoice({bool camera = false, bool gallery = false}) async {
     if (_recognizing) return;
     XFile? file;
     try {
       if (camera && (Platform.isAndroid || Platform.isIOS)) {
         file = await ImagePicker().pickImage(source: ImageSource.camera, imageQuality: 94, maxWidth: 2600);
+      } else if (gallery && (Platform.isAndroid || Platform.isIOS)) {
+        file = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 96, maxWidth: 3000);
       } else {
         file = await openFile(acceptedTypeGroups: [_imageTypeGroup()]);
       }
@@ -146,17 +149,31 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
         imagePath: file.path,
         products: widget.controller.products,
         supplierLinks: widget.controller.productSuppliers,
+        suppliers: widget.controller.suppliers,
       );
       if (!mounted) return;
       setState(() {
         _rawOcrText = result.rawText;
+        if (result.documentNumber?.trim().isNotEmpty == true) _document.text = result.documentNumber!.trim();
+        if (result.supplierId != null && widget.controller.suppliers.any((supplier) => supplier.id == result.supplierId)) {
+          _supplierId = result.supplierId;
+        }
         for (final recognized in result.lines) {
           _lines[recognized.product.id] = recognized.toDeliveryLine();
         }
       });
       final doubtful = result.lines.where((line) => line.confidence < .72).length;
+      final autoFields = <String>[
+        if (result.supplierName?.trim().isNotEmpty == true) 'поставщик: ${result.supplierName}',
+        if (result.documentNumber?.trim().isNotEmpty == true) 'накладная №${result.documentNumber}',
+      ];
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Распознано ${result.lines.length} позиций${doubtful > 0 ? ', проверить вручную: $doubtful' : ''}. Перед проведением обязательно сверьте результат с накладной и заполните закупочную цену.'),
+        content: Text(
+          'Накладная распознана: ${result.lines.length} позиций'
+          '${doubtful > 0 ? ', проверить вручную: $doubtful' : ''}'
+          '${autoFields.isEmpty ? '' : '. Автоматически заполнено: ${autoFields.join(', ')}'}.'
+          ' Перед проведением сверьте результат с оригиналом.',
+        ),
       ));
     } catch (e) {
       if (mounted) showErrorSnack(context, e);
@@ -282,7 +299,7 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
                       children: [
                         const InfoBanner(
                           icon: Icons.local_shipping_outlined,
-                          text: 'Товар можно добавить тремя способами: сканировать камерой, ввести код товара или найти по названию. Для серии товаров используйте режим «Сканировать товар»: после ввода количества и цены сразу откроется следующий скан.',
+                          text: 'Поставка поддерживает скан товара камерой, ввод кода, поиск по названию, речевой ввод и автоматическое распознавание накладной по фото/скану.',
                         ),
                         const SizedBox(height: 18),
                         _deliveryHeader(context),
@@ -318,9 +335,18 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
                           decoration: InputDecoration(
                             prefixIcon: const Icon(Icons.search),
                             labelText: 'Найти товар по названию или коду',
-                            suffixIcon: _productSearch.text.isEmpty
-                                ? null
-                                : IconButton(onPressed: _productSearch.clear, tooltip: 'Очистить', icon: const Icon(Icons.clear)),
+                            suffixIcon: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                VoiceInputButton(
+                                  controller: _productSearch,
+                                  tooltip: 'Найти товар голосом',
+                                  onApplied: _refreshProductSearch,
+                                ),
+                                if (_productSearch.text.isNotEmpty)
+                                  IconButton(onPressed: _productSearch.clear, tooltip: 'Очистить', icon: const Icon(Icons.clear)),
+                              ],
+                            ),
                           ),
                         ),
                         if (_productSearch.text.trim().isNotEmpty) ...[
@@ -353,7 +379,7 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
                           Container(
                             padding: const EdgeInsets.all(22),
                             decoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainer, borderRadius: BorderRadius.circular(18)),
-                            child: const Text('Пока нет позиций. Сканируйте товар, введите код или найдите его по названию.', textAlign: TextAlign.center),
+                            child: const Text('Пока нет позиций. Сканируйте товар, загрузите накладную, продиктуйте название или найдите товар вручную.', textAlign: TextAlign.center),
                           )
                         else
                           _linesCard(context),
@@ -380,7 +406,14 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            TextField(controller: _employee, decoration: const InputDecoration(labelText: 'Сотрудник, ФИО *', prefixIcon: Icon(Icons.person_outline))),
+            TextField(
+              controller: _employee,
+              decoration: InputDecoration(
+                labelText: 'Сотрудник, ФИО *',
+                prefixIcon: const Icon(Icons.person_outline),
+                suffixIcon: VoiceInputButton(controller: _employee, tooltip: 'Продиктовать ФИО'),
+              ),
+            ),
             const SizedBox(height: 12),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -410,9 +443,24 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
                 onChanged: _saving ? null : (value) => setState(() => _locationId = value),
               ),
             if (locations.isNotEmpty) const SizedBox(height: 12),
-            TextField(controller: _document, decoration: const InputDecoration(labelText: 'Номер накладной / ТТН', prefixIcon: Icon(Icons.receipt_long_outlined))),
+            TextField(
+              controller: _document,
+              decoration: InputDecoration(
+                labelText: 'Номер накладной / ТТН',
+                prefixIcon: const Icon(Icons.receipt_long_outlined),
+                suffixIcon: VoiceInputButton(controller: _document, tooltip: 'Продиктовать номер накладной'),
+              ),
+            ),
             const SizedBox(height: 12),
-            TextField(controller: _comment, maxLines: 2, decoration: const InputDecoration(labelText: 'Комментарий', prefixIcon: Icon(Icons.notes_outlined))),
+            TextField(
+              controller: _comment,
+              maxLines: 2,
+              decoration: InputDecoration(
+                labelText: 'Комментарий',
+                prefixIcon: const Icon(Icons.notes_outlined),
+                suffixIcon: VoiceInputButton(controller: _comment, append: true, tooltip: 'Продиктовать комментарий'),
+              ),
+            ),
           ],
         ),
       ),
@@ -426,9 +474,9 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text('Накладная / ТТН', style: TextStyle(fontWeight: FontWeight.w900)),
+            const Text('Накладная / ТТН — автоматическое распознавание', style: TextStyle(fontWeight: FontWeight.w900)),
             const SizedBox(height: 8),
-            const Text('Дополнительно можно сфотографировать или выбрать накладную: OCR предложит позиции, но поставка всё равно подтверждается вручную.'),
+            const Text('Сфотографируйте накладную, выберите фото из галереи или подгрузите готовый скан. OCR автоматически ищет товары, количество, закупочную цену, поставщика и номер накладной. Сомнительные строки отмечаются для ручной проверки.'),
             const SizedBox(height: 10),
             Wrap(
               spacing: 10,
@@ -440,10 +488,16 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
                     icon: const Icon(Icons.camera_alt_outlined),
                     label: const Text('Сфотографировать накладную'),
                   ),
+                if (Platform.isAndroid || Platform.isIOS)
+                  FilledButton.tonalIcon(
+                    onPressed: _recognizing || _saving ? null : () => _scanInvoice(gallery: true),
+                    icon: const Icon(Icons.photo_library_outlined),
+                    label: const Text('Выбрать фото'),
+                  ),
                 FilledButton.tonalIcon(
-                  onPressed: _recognizing || _saving ? null : () => _scanInvoice(camera: false),
+                  onPressed: _recognizing || _saving ? null : () => _scanInvoice(),
                   icon: _recognizing ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.document_scanner_outlined),
-                  label: Text(_recognizing ? 'Распознавание…' : 'Выбрать скан / фото'),
+                  label: Text(_recognizing ? 'Распознавание накладной…' : 'Подгрузить скан / файл'),
                 ),
                 if (_rawOcrText != null)
                   Chip(avatar: const Icon(Icons.auto_awesome, size: 18), label: Text('OCR: ${_lines.values.where((line) => line.confidence != null).length} поз.')),

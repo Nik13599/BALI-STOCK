@@ -40,7 +40,7 @@ jobs:
           channel: stable
           cache: true
       - run: flutter create . --project-name bali_stock --org com.bali.stock --platforms=android,ios,windows
-      - name: Ensure Android release permissions
+      - name: Ensure Android camera, network and speech permissions
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -49,6 +49,10 @@ jobs:
           permissions = [
               '<uses-permission android:name="android.permission.INTERNET" />',
               '<uses-permission android:name="android.permission.CAMERA" />',
+              '<uses-permission android:name="android.permission.RECORD_AUDIO" />',
+              '<uses-permission android:name="android.permission.BLUETOOTH" />',
+              '<uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />',
+              '<uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />',
           ]
           marker = '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
           additions = []
@@ -58,7 +62,15 @@ jobs:
                   additions.append('    ' + permission)
           if additions:
               text = text.replace(marker, marker + '\n' + '\n'.join(additions))
-              p.write_text(text, encoding='utf-8')
+          if 'android.speech.RecognitionService' not in text:
+              queries = '''    <queries>
+                <intent>
+                    <action android:name="android.speech.RecognitionService" />
+                </intent>
+            </queries>
+          '''
+              text = text.replace('    <application', queries + '    <application', 1)
+          p.write_text(text, encoding='utf-8')
           PY
       - run: flutter pub get
       - run: dart run flutter_launcher_icons
@@ -138,7 +150,7 @@ jobs:
           channel: stable
           cache: true
       - run: flutter create . --project-name bali_stock --org com.bali.stock --platforms=android,ios,windows
-      - name: Configure iOS camera, photos and deployment target
+      - name: Configure iOS camera, photos, microphone, speech and deployment target
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -150,6 +162,8 @@ jobs:
               data = plistlib.load(f)
           data['NSCameraUsageDescription'] = 'BALI STOCK использует камеру для сканирования QR-кодов, штрихкодов и накладных.'
           data['NSPhotoLibraryUsageDescription'] = 'BALI STOCK использует фото накладной для распознавания поставки.'
+          data['NSMicrophoneUsageDescription'] = 'BALI STOCK использует микрофон для речевого ввода при приёмке поставки.'
+          data['NSSpeechRecognitionUsageDescription'] = 'BALI STOCK распознаёт речь для заполнения полей поставки и поиска товаров.'
           with plist_path.open('wb') as f:
               plistlib.dump(data, f, fmt=plistlib.FMT_XML, sort_keys=False)
 
