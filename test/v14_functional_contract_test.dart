@@ -32,6 +32,13 @@ void main() {
         varianceRecheckAmount: 350,
       );
 
+  test('spot stocktake is preserved as its own immutable operation type', () {
+    final type = StockOperationTypeX.fromDb('spot_stocktake');
+    expect(type, StockOperationType.spotStocktake);
+    expect(type.dbValue, 'spot_stocktake');
+    expect(type.displayName, 'Точечный переучёт');
+  });
+
   test('V14 economics calculates cost, margin and potential revenue', () {
     final product = sampleProduct();
     const portion = PortionPrice(amount: 50, price: 10);
