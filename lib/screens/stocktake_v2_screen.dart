@@ -466,55 +466,22 @@ class _StocktakeV2ScreenState extends State<StocktakeV2Screen> with WidgetsBindi
                         );
                         await _noteStore.save(_draft!.id, comments: _comments, rechecked: _rechecked);
                         if (mounted) setState(() {});
-                        if (dialogContext.mounted) Navigator.pop(dialogContext, _QuickCountResult.saved);
+                        if (dialogContext.mounted) {
+                          Navigator.pop(
+                            dialogContext,
+                            allowNextScan ? _QuickCountResult.savedAndScanNext : _QuickCountResult.saved,
+                          );
+                        }
                       } catch (e) {
                         if (dialogContext.mounted) showErrorSnack(dialogContext, e);
                         setState(() => saving = false);
                       }
                     },
-              icon: const Icon(Icons.check_circle_outline),
-              label: const Text('Сохранить'),
+              icon: allowNextScan
+                  ? const BaliNavIcon(kind: BaliNavIconKind.scan, active: true, size: 19)
+                  : const Icon(Icons.check_circle_outline),
+              label: Text(allowNextScan ? 'Сохранить → следующий скан' : 'Сохранить'),
             ),
-            if (allowNextScan)
-              FilledButton.icon(
-                onPressed: saving
-                    ? null
-                    : () async {
-                        if (!(key.currentState?.validate() ?? false)) return;
-                        final wholeValue = int.tryParse(whole.text);
-                        final extraValue = line.stockUnit == StockUnit.piece ? 0 : int.tryParse(extra.text);
-                        if (wholeValue == null || wholeValue < 0 || extraValue == null || extraValue < 0 || (line.stockUnit != StockUnit.piece && extraValue >= line.packageSize)) {
-                          showErrorSnack(dialogContext, 'Проверьте количество');
-                          return;
-                        }
-                        setState(() => saving = true);
-                        try {
-                          current.whole.text = '$wholeValue';
-                          current.extra.text = '$extraValue';
-                          final note = comment.text.trim();
-                          if (note.isEmpty) {
-                            _comments.remove(line.productId);
-                          } else {
-                            _comments[line.productId] = note;
-                          }
-                          _rechecked.remove(line.productId);
-                          await widget.controller.saveStocktakeDraftLine(
-                            draftId: _draft!.id,
-                            productId: line.productId,
-                            wholePackages: wholeValue,
-                            extraAmount: extraValue,
-                          );
-                          await _noteStore.save(_draft!.id, comments: _comments, rechecked: _rechecked);
-                          if (mounted) setState(() {});
-                          if (dialogContext.mounted) Navigator.pop(dialogContext, _QuickCountResult.savedAndScanNext);
-                        } catch (e) {
-                          if (dialogContext.mounted) showErrorSnack(dialogContext, e);
-                          setState(() => saving = false);
-                        }
-                      },
-                icon: const BaliNavIcon(kind: BaliNavIconKind.scan, active: true, size: 19),
-                label: const Text('Сохранить → следующий скан'),
-              ),
           ],
         ),
       ),
