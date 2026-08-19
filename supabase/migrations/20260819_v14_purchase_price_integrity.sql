@@ -1,4 +1,4 @@
--- V14 purchase-price integrity.
+-- V14 purchase-price integrity and RPC access hardening.
 -- Last purchase price and its currency are authoritative delivery facts.
 -- Catalog editing and supplier linking must never overwrite them.
 
@@ -173,3 +173,27 @@ begin
   return op;
 end
 $function$;
+
+-- All writes go through the PIN-protected Edge API running with service_role.
+-- Keep only read-only analytics helpers callable by anon/authenticated clients.
+do $block$
+declare
+  r record;
+  fn text;
+begin
+  for r in
+    select p.proname, pg_get_function_identity_arguments(p.oid) as args
+    from pg_proc p
+    join pg_namespace n on n.oid=p.pronamespace
+    where n.nspname='public'
+      and p.proname like 'stock_%'
+      and p.proname not in ('stock_analytics_summary','stock_purchase_suggestions','stock_primary_location_id')
+  loop
+    fn := format('public.%I(%s)', r.proname, r.args);
+    execute 'revoke all on function ' || fn || ' from public';
+    execute 'revoke all on function ' || fn || ' from anon';
+    execute 'revoke all on function ' || fn || ' from authenticated';
+    execute 'grant execute on function ' || fn || ' to service_role';
+  end loop;
+end
+$block$;
