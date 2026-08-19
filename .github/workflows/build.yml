@@ -24,8 +24,8 @@ jobs:
       - name: Generate platform wrappers
         run: flutter create . --project-name bali_stock --org com.bali.stock --platforms=android,ios,windows
       - run: flutter pub get
-      - name: Check duplicates, dead Dart files and whitespace
-        run: python tool/code_health_check.py --fail-on-orphans
+      - name: Check duplicate lines, code clones, dead files and whitespace
+        run: python tool/code_health_check.py --fail-on-orphans --fail-on-clones
       - run: flutter analyze
       - run: flutter test
 
