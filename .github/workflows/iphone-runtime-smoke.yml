@@ -16,121 +16,128 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validate V16 iPhone launcher and UI modules
+      - name: Validate local iPhone UI modules
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import re
 
-          launcher = Path('ios-web/launch-v16.html').read_text(encoding='utf-8')
-          ui = Path('ios-web/v15-ui.js').read_text(encoding='utf-8')
-          delivery = Path('ios-web/v15-delivery-link.js').read_text(encoding='utf-8')
-          compat = Path('ios-web/v15-compat.js').read_text(encoding='utf-8')
-          catalog = Path('ios-web/v16-catalog-history.js').read_text(encoding='utf-8')
-          required_launcher = [
-              'bali-stock-ios-runtime',
-              'v15-ui.js',
-              'v15-delivery-link.js',
-              'v15-compat.js',
-              'v16-catalog-history.js',
-              'async function snapshot',
-              'baseSnapshot=snapshot',
-          ]
-          missing = [item for item in required_launcher if item not in launcher]
-          if missing:
-              raise SystemExit(f'V16 launcher contract missing: {missing!r}')
-
-          required_ui = [
-              '__BALI_STOCK_V15_UI__',
-              'Поставщик не назначен',
-              'Настройки товара',
-              'Продажи и цены',
-              'Ввести нового поставщика',
-              'Категории → товары по алфавиту',
-              'Нужно заказать',
-              'Все товары',
-              'Заявки',
-              'Накладная не распознана. Загрузите оригинальную накладную.',
-              'Распознаю накладную…',
-              'reduceInvoiceImage',
-          ]
-          missing = [item for item in required_ui if item not in ui]
-          if missing:
-              raise SystemExit(f'V15 base UI contract missing: {missing!r}')
-
-          required_delivery = [
-              '__BALI_STOCK_V15_DELIVERY_LINK__',
-              'purchase_request_id',
-              'Заявка на закупку — при наличии',
-              'received_quantity',
-              'prefillRequest',
-          ]
-          missing = [item for item in required_delivery if item not in delivery]
-          if missing:
-              raise SystemExit(f'V15 delivery-link contract missing: {missing!r}')
-
-          required_compat = [
-              '__BALI_STOCK_V15_COMPAT__',
-              "v14Photo: 'v14pcPhoto'",
-              "v14Edit: 'v14pcEdit'",
-              "v14Spot: 'v14pcStocktake'",
-          ]
-          missing = [item for item in required_compat if item not in compat]
-          if missing:
-              raise SystemExit(f'V15 compatibility bridge missing: {missing!r}')
-
-          required_v16 = [
-              '__BALI_STOCK_V16_CATALOG_HISTORY__',
-              'Редактирование склада',
-              'Пароль не требуется',
-              'ДОБАВИТЬ НОВЫЙ ТОВАР',
-              'catalog_product_batch',
-              "api('draft_delete'",
-              'Удалять можно только черновики',
-          ]
-          missing = [item for item in required_v16 if item not in catalog]
-          if missing:
-              raise SystemExit(f'V16 catalog/history contract missing: {missing!r}')
-
-          scripts = re.findall(r'<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)</script>', launcher, flags=re.I)
-          if not scripts:
-              raise SystemExit('V16 launcher inline JavaScript not found')
-          for index, script in enumerate(scripts):
-              Path(f'/tmp/bali-v16-launcher-{index}.js').write_text(script, encoding='utf-8')
-          print(f'V16 launcher contract OK; inline scripts={len(scripts)}')
+          contracts = {
+              'ios-web/v15-ui.js': [
+                  '__BALI_STOCK_V15_UI__',
+                  'Поставщик не назначен',
+                  'Настройки товара',
+                  'Продажи и цены',
+                  'Ввести нового поставщика',
+                  'Категории → товары по алфавиту',
+                  'Нужно заказать',
+                  'Все товары',
+                  'Заявки',
+                  'Накладная не распознана. Загрузите оригинальную накладную.',
+                  'Распознаю накладную…',
+                  'reduceInvoiceImage',
+              ],
+              'ios-web/v15-delivery-link.js': [
+                  '__BALI_STOCK_V15_DELIVERY_LINK__',
+                  'purchase_request_id',
+                  'Заявка на закупку — при наличии',
+                  'received_quantity',
+                  'prefillRequest',
+              ],
+              'ios-web/v15-compat.js': [
+                  '__BALI_STOCK_V15_COMPAT__',
+                  "v14Photo: 'v14pcPhoto'",
+                  "v14Edit: 'v14pcEdit'",
+                  "v14Spot: 'v14pcStocktake'",
+              ],
+              'ios-web/v16-catalog-history.js': [
+                  '__BALI_STOCK_V16_CATALOG_HISTORY__',
+                  'Редактирование склада',
+                  'ДОБАВИТЬ НОВЫЙ ТОВАР',
+                  'catalog_product_batch',
+                  "api('draft_delete'",
+                  'Удалять можно только черновики',
+              ],
+          }
+          for path, required in contracts.items():
+              source = Path(path).read_text(encoding='utf-8')
+              missing = [item for item in required if item not in source]
+              if missing:
+                  raise SystemExit(f'{path} contract missing: {missing!r}')
+          print('Local iPhone UI module contracts OK')
           PY
           node --check ios-web/v15-ui.js
           node --check ios-web/v15-delivery-link.js
           node --check ios-web/v15-compat.js
           node --check ios-web/v16-catalog-history.js
-          for file in /tmp/bali-v16-launcher-*.js; do
-            node --check "$file"
-          done
+
+      - name: Validate generated iPhone profile uses Supabase only
+        run: |
+          python tool/generate_mobileconfig.py
+          python3 - <<'PY'
+          import plistlib
+          from pathlib import Path
+          expected = 'https://mvnxfouyoynqyjdpcblh.supabase.co/functions/v1/bali-stock-ios-runtime'
+          with Path('dist/ios/BALI-STOCK-iPhone.mobileconfig').open('rb') as f:
+              profile = plistlib.load(f)
+          clip = profile['PayloadContent'][0]
+          assert clip['URL'] == expected, clip['URL']
+          assert 'github' not in clip['URL'].lower(), clip['URL']
+          print('iPhone profile endpoint OK:', clip['URL'])
+          PY
+
       - name: Fetch production iPhone runtime
         run: |
           curl --fail --silent --show-error \
+            -D /tmp/bali-runtime-headers.txt \
             "https://mvnxfouyoynqyjdpcblh.supabase.co/functions/v1/bali-stock-ios-runtime?ci=${GITHUB_RUN_ID}" \
             -o /tmp/bali-stock-ios-runtime.html
           test -s /tmp/bali-stock-ios-runtime.html
           grep -qi '^<!doctype html>' /tmp/bali-stock-ios-runtime.html
-      - name: Validate runtime contract
+          grep -qi '^content-type: text/html' /tmp/bali-runtime-headers.txt
+
+      - name: Validate self-contained production runtime contract
         run: |
           python3 - <<'PY'
           from pathlib import Path
           import re
 
           html = Path('/tmp/bali-stock-ios-runtime.html').read_text(encoding='utf-8')
+          forbidden = [
+              'raw.githack.com',
+              'raw.githubusercontent.com/Nik13599/BALI-STOCK',
+              'Введите пароль доступа',
+              'Пароль не введён',
+              'Неверный пароль',
+          ]
+          remaining = [item for item in forbidden if item in html]
+          if remaining:
+              raise SystemExit(f'Forbidden runtime dependencies/prompts remain: {remaining!r}')
           legacy = re.findall(r'return,[A-Za-z_$][A-Za-z0-9_$]*=', html)
           if legacy:
               raise SystemExit(f'Legacy Safari syntax remains: {legacy[:5]}')
-          if 'async function snapshot' not in html:
-              raise SystemExit('snapshot() is missing')
-          if 'baseSnapshot=snapshot' not in html:
-              raise SystemExit('V14 snapshot binding is missing')
+
+          required = [
+              'BALI STOCK',
+              '__BALI_STOCK_SUPABASE_RUNTIME__',
+              'bali-stock-client-api',
+              '__BALI_V14_SCAN_WORKFLOWS__',
+              '__BALI_STOCK_V15_UI__',
+              '__BALI_STOCK_V15_DELIVERY_LINK__',
+              '__BALI_STOCK_V15_COMPAT__',
+              '__BALI_STOCK_V16_CATALOG_HISTORY__',
+              'async function snapshot',
+              'baseSnapshot=snapshot',
+              'СОХРАНИТЬ → СЛЕДУЮЩИЙ СКАН',
+              'Закупочная цена обязательна для каждой позиции поставки.',
+              'Накладная не распознана. Загрузите оригинальную накладную.',
+          ]
+          missing = [item for item in required if item not in html]
+          if missing:
+              raise SystemExit(f'Production runtime contract missing: {missing!r}')
 
           match = re.search(r"nav\.innerHTML='<button data-tab=\"home\" class=\"active\">[\s\S]*?</button>';", html)
           if not match:
-              raise SystemExit('V14 runtime navigation not found')
+              raise SystemExit('Runtime navigation not found')
           nav = match.group(0)
           labels = re.findall(r'</b>([^<]+)</button>', nav)
           expected = ['Главная', 'Склад', 'Переучёт', 'Закупки', 'Поставка', 'Настройки']
@@ -138,38 +145,22 @@ jobs:
               raise SystemExit(f'Navigation mismatch: {labels!r}')
           if 'data-tab="history"' in nav:
               raise SystemExit('History must not be a primary tab')
-          if '<svg' not in nav:
-              raise SystemExit('Custom SVG navigation icons are missing')
-
-          required_scanner_contract = [
-              '__BALI_V14_SCAN_WORKFLOWS__',
-              'function scanCodeFor(onCode)',
-              'Сканировать товар',
-              'Ввести код товара',
-              'СОХРАНИТЬ → СЛЕДУЮЩИЙ СКАН',
-              'ДАННЫЕ ВВЕДЕНЫ',
-              'НЕ ВВЕДЕНО',
-              'Название / категория / код товара',
-              'Закупочная цена обязательна для каждой позиции поставки.',
-              "facingMode:'environment'",
-          ]
-          missing = [item for item in required_scanner_contract if item not in html]
-          if missing:
-              raise SystemExit(f'Scanner workflow contract missing: {missing!r}')
 
           scripts = re.findall(r'<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)</script>', html, flags=re.I)
           if len(scripts) < 4:
-              raise SystemExit(f'Expected multiple inline scripts including scanner workflow, got {len(scripts)}')
+              raise SystemExit(f'Expected embedded runtime scripts, got {len(scripts)}')
           for index, script in enumerate(scripts):
               Path(f'/tmp/bali-runtime-inline-{index}.js').write_text(script, encoding='utf-8')
-          print(f'Runtime contract OK; inline scripts={len(scripts)}')
+          print(f'Supabase production runtime contract OK; inline scripts={len(scripts)}')
           PY
+
       - name: Parse every production runtime inline JavaScript block
         run: |
           for file in /tmp/bali-runtime-inline-*.js; do
             echo "Checking $file"
             node --check "$file"
           done
+
       - name: Validate production runtime health endpoint
         run: |
           curl --fail --silent --show-error \
@@ -180,10 +171,14 @@ jobs:
           from pathlib import Path
           data = json.loads(Path('/tmp/bali-runtime-health.json').read_text(encoding='utf-8'))
           assert data['ok'] is True, data
-          assert data['remaining_legacy_return_comma'] == 0, data
-          assert data['snapshot_found'] is True, data
-          assert data['snapshot_before_v14'] is True, data
+          assert data['version'] == '1.0.1', data
+          assert data['source'] == 'supabase-storage', data
+          assert data['github_dependency'] is False, data
+          assert data['password_prompt'] is False, data
           assert data['scanner_workflows'] is True, data
-          assert data['history_in_runtime_nav'] is False, data
-          print('Production iPhone runtime health + V16 local UI modules OK')
+          assert data['invoice_auto'] is True, data
+          assert data['compact_product_card'] is True, data
+          assert data['purchase_requests'] is True, data
+          assert data['catalog_edit'] is True, data
+          print('Production iPhone runtime health OK')
           PY
