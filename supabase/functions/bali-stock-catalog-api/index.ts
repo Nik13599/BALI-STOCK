@@ -80,6 +80,17 @@ Deno.serve(async (req) => {
       return json({ ok: true, product_key: data });
     }
 
+    if (action === "product_delete") {
+      const productKey = String(body.product_key ?? "").trim();
+      if (!productKey) throw new Error("product_key required");
+      const { data, error } = await db.rpc("stock_catalog_product_delete_v17", {
+        p_product_key: productKey,
+        p_actor: String(body.employee ?? "").trim() || null,
+      });
+      if (error) throw error;
+      return json({ ok: data === true, deleted: data === true });
+    }
+
     if (action === "category_rename") {
       const oldName = String(body.old_name ?? "").trim();
       const newName = String(body.new_name ?? "").trim();

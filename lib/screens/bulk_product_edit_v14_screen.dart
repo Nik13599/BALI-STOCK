@@ -22,6 +22,7 @@ class _BulkProductEditV14ScreenState extends State<BulkProductEditV14Screen> {
   String? category;
   bool saving = false;
   bool adding = false;
+  int? deletingProductId;
 
   ProductV14CatalogEdit _original(Product product) => ProductV14CatalogEdit.fromProduct(
         product,
@@ -188,6 +189,62 @@ class _BulkProductEditV14ScreenState extends State<BulkProductEditV14Screen> {
     }
   }
 
+  Future<void> _deleteProduct(Product product) async {
+    if (deletingProductId != null) return;
+    if (!widget.controller.sharedOnline) {
+      showErrorSnack(context, 'Удаление товара требует подключения к общей базе.');
+      return;
+    }
+    if (product.stockInitialized && product.totalAmount != 0) {
+      showErrorSnack(
+        context,
+        'Нельзя удалить «${product.name}»: остаток не равен нулю. Сначала проведите переучёт и установите остаток 0.',
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Удалить товар?'),
+        content: Text(
+          '«${product.name}» будет полностью удалён из текущего склада и исчезнет из поиска, поставок, закупок и новых переучётов.\n\n'
+          'Проведённая история операций сохранится. Удаление возможно только при нулевом остатке и если товар не участвует в незавершённом переучёте или активной заявке на закупку.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('ОТМЕНА')),
+          FilledButton.tonalIcon(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            icon: const Icon(Icons.delete_forever_outlined),
+            label: const Text('УДАЛИТЬ ТОВАР'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true) return;
+
+    final employee = await _employee('Кто удаляет товар?');
+    if (!mounted || employee == null) return;
+    setState(() => deletingProductId = product.id);
+    try {
+      await _catalog.deleteProduct(
+        employee: employee,
+        productKey: widget.controller.productKeyFor(product),
+      );
+      drafts.remove(product.id);
+      await widget.controller.refresh();
+      if (!mounted) return;
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Товар «${product.name}» удалён со склада. История проведённых операций сохранена.')),
+      );
+    } catch (e) {
+      if (mounted) showErrorSnack(context, e);
+    } finally {
+      if (mounted) setState(() => deletingProductId = null);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final products = _products();
@@ -216,7 +273,7 @@ class _BulkProductEditV14ScreenState extends State<BulkProductEditV14Screen> {
               children: [
                 const InfoBanner(
                   icon: Icons.inventory_2_outlined,
-                  text: 'Пароль для редактирования склада не требуется. Можно менять существующие позиции и добавлять новые. Закупочная цена вручную не задаётся — её формирует фактическая поставка.',
+                  text: 'Пароль для редактирования склада не требуется. Можно менять, добавлять и удалять товары. Удаление разрешено только при нулевом остатке; проведённая история сохраняется. Закупочная цена вручную не задаётся — её формирует фактическая поставка.',
                 ),
                 const SizedBox(height: 9),
                 LayoutBuilder(builder: (context, constraints) {
@@ -275,7 +332,9 @@ class _BulkProductEditV14ScreenState extends State<BulkProductEditV14Screen> {
                         product: product,
                         edit: _edit(product),
                         changed: drafts.containsKey(product.id),
+                        deleting: deletingProductId == product.id,
                         onChanged: (value) => _set(product, value),
+                        onDelete: () => _deleteProduct(product),
                         categories: widget.controller.categories,
                       );
                     },
@@ -318,14 +377,18 @@ class _BulkRow extends StatelessWidget {
     required this.product,
     required this.edit,
     required this.changed,
+    required this.deleting,
     required this.onChanged,
+    required this.onDelete,
     required this.categories,
   });
 
   final Product product;
   final ProductV14CatalogEdit edit;
   final bool changed;
+  final bool deleting;
   final ValueChanged<ProductV14CatalogEdit> onChanged;
+  final VoidCallback onDelete;
   final List<Category> categories;
 
   @override
@@ -362,20 +425,36 @@ class _BulkRow extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              OutlinedButton.icon(
-                onPressed: () async {
-                  final value = await showDialog<ProductV14CatalogEdit>(
-                    context: context,
-                    builder: (_) => _CatalogEditDialog(
-                      product: product,
-                      initial: edit,
-                      categories: categories,
-                    ),
-                  );
-                  if (value != null) onChanged(value);
-                },
-                icon: const Icon(Icons.tune),
-                label: const Text('Настроить'),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: deleting
+                        ? null
+                        : () async {
+                            final value = await showDialog<ProductV14CatalogEdit>(
+                              context: context,
+                              builder: (_) => _CatalogEditDialog(
+                                product: product,
+                                initial: edit,
+                                categories: categories,
+                              ),
+                            );
+                            if (value != null) onChanged(value);
+                          },
+                    icon: const Icon(Icons.tune),
+                    label: const Text('Настроить'),
+                  ),
+                  const SizedBox(height: 4),
+                  TextButton.icon(
+                    onPressed: deleting ? null : onDelete,
+                    icon: deleting
+                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.delete_forever_outlined),
+                    label: const Text('Удалить'),
+                  ),
+                ],
               ),
             ],
           ),
