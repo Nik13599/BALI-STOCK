@@ -30,11 +30,16 @@ void main() {
     expect(card.contains('Ввести нового поставщика вручную'), isTrue);
   });
 
-  test('iPhone launcher still provides the compact product card runtime layer', () {
-    final launcher = File('ios-web/launch-v14-3.html').readAsStringSync();
-    expect(launcher.contains('__BALI_V14_COMPACT_PRODUCT_CARD__'), isTrue);
-    expect(launcher.contains('window.v14ShowProduct=compact'), isTrue);
-    expect(launcher.contains('@media(max-width:520px)'), isTrue);
-    expect(launcher.contains('ПЕРЕУЧЕСТЬ ТОВАР'), isTrue);
+  test('iPhone V15 UI has the same compact card and settings gear', () {
+    final launcher = File('ios-web/launch-v15.html').readAsStringSync();
+    final ui = File('ios-web/v15-ui.js').readAsStringSync();
+    expect(launcher.contains('v15-ui.js'), isTrue);
+    expect(ui.contains('__BALI_STOCK_V15_UI__'), isTrue);
+    expect(ui.contains('v15Gear'), isTrue);
+    expect(ui.contains('Настройки товара'), isTrue);
+    expect(ui.contains('Поставщик не назначен'), isTrue);
+    expect(ui.contains('Продажи и цены'), isTrue);
+    expect(ui.contains('Ввести нового поставщика'), isTrue);
+    expect(ui.contains('ПЕРЕУЧЕСТЬ ТОВАР'), isTrue);
   });
 }
