@@ -65,9 +65,11 @@ class VoiceInputService {
     try {
       await _speech.listen(
         onResult: _onResult,
-        localeId: _russianLocale,
-        listenFor: timeout,
-        pauseFor: const Duration(seconds: 4),
+        listenOptions: SpeechListenOptions(
+          localeId: _russianLocale,
+          listenFor: timeout,
+          pauseFor: const Duration(seconds: 4),
+        ),
       );
     } catch (_) {
       _finish(null);
