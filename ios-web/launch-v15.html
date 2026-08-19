@@ -23,26 +23,30 @@
   const runtimeUrl = 'https://mvnxfouyoynqyjdpcblh.supabase.co/functions/v1/bali-stock-ios-runtime';
   const v15UiUrl = 'https://raw.githack.com/Nik13599/BALI-STOCK/main/ios-web/v15-ui.js';
   const v15DeliveryUrl = 'https://raw.githack.com/Nik13599/BALI-STOCK/main/ios-web/v15-delivery-link.js';
+  const v15CompatUrl = 'https://raw.githack.com/Nik13599/BALI-STOCK/main/ios-web/v15-compat.js';
   const status = document.getElementById('status');
   try {
     const stamp = Date.now();
     const responses = await Promise.all([
       fetch(runtimeUrl + '?launcher=15&ts=' + stamp, {cache:'no-store',headers:{Accept:'text/plain,*/*'}}),
       fetch(v15UiUrl + '?v=' + stamp, {cache:'no-store'}),
-      fetch(v15DeliveryUrl + '?v=' + stamp, {cache:'no-store'})
+      fetch(v15DeliveryUrl + '?v=' + stamp, {cache:'no-store'}),
+      fetch(v15CompatUrl + '?v=' + stamp, {cache:'no-store'})
     ]);
     if (!responses[0].ok) throw new Error('Runtime HTTP ' + responses[0].status);
-    if (!responses[1].ok || !responses[2].ok) throw new Error('V15 UI не загрузился');
+    if (!responses[1].ok || !responses[2].ok || !responses[3].ok) throw new Error('V15 UI не загрузился');
     let html = await responses[0].text();
     const ui = await responses[1].text();
     const delivery = await responses[2].text();
+    const compat = await responses[3].text();
     if (!/^\s*<!doctype html>/i.test(html) || !html.includes('BALI STOCK')) throw new Error('Runtime вернул неверный формат');
     if (/return,[A-Za-z_$][A-Za-z0-9_$]*=/.test(html)) throw new Error('Проверка Safari не пройдена');
     if (!html.includes('async function snapshot') || !html.includes('baseSnapshot=snapshot')) throw new Error('Не загружен модуль синхронизации');
-    if (!ui.includes('__BALI_STOCK_V15_UI__') || !delivery.includes('__BALI_STOCK_V15_DELIVERY_LINK__')) throw new Error('Получен неполный V15 модуль');
+    if (!ui.includes('__BALI_STOCK_V15_UI__') || !delivery.includes('__BALI_STOCK_V15_DELIVERY_LINK__') || !compat.includes('__BALI_STOCK_V15_COMPAT__')) throw new Error('Получен неполный V15 модуль');
     const safeUi = ui.replace(/<\/script/gi, '<\\/script');
     const safeDelivery = delivery.replace(/<\/script/gi, '<\\/script');
-    html = html.replace('</body>', '<script id="bali-v15-ui">' + safeUi + '<\/script><script id="bali-v15-delivery-link">' + safeDelivery + '<\/script></body>');
+    const safeCompat = compat.replace(/<\/script/gi, '<\\/script');
+    html = html.replace('</body>', '<script id="bali-v15-ui">' + safeUi + '<\/script><script id="bali-v15-delivery-link">' + safeDelivery + '<\/script><script id="bali-v15-compat">' + safeCompat + '<\/script></body>');
     document.open();
     document.write(html);
     document.close();
