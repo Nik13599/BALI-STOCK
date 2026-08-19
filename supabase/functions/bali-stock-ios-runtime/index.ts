@@ -131,6 +131,51 @@ const scannerEnhancement = `<script id="bali-v14-scan-workflows">
 })();
 </script>`;
 
+const voiceInvoiceEnhancement = `<script id="bali-v14-voice-invoice">
+(function(){
+  'use strict';
+  window.__BALI_V14_VOICE_INPUT__='v14.5';
+  window.__BALI_V14_INVOICE_AUTO__='v14.5';
+
+  function clean(v){return String(v==null?'':v).trim()}
+  function norm(v){return clean(v).toLowerCase().replace(/ё/g,'е').replace(/[^a-zа-я0-9]+/gi,' ').replace(/\\s+/g,' ').trim()}
+  function current(id){var e=document.getElementById(id);return e?e.value:''}
+  function setValue(id,value){var e=document.getElementById(id);if(!e)return;e.value=value==null?'':String(value);try{e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}))}catch(_){}}
+  function saveDeliveryHeader(){if(tab!=='delivery')return;delivery.__v14Employee=current('delEmp')||delivery.__v14Employee||'';delivery.__v14Supplier=current('delSup')||delivery.__v14Supplier||'';delivery.__v14Location=current('delLoc')||delivery.__v14Location||'';delivery.__v14Document=current('delDoc')||delivery.__v14Document||'';delivery.__v14Comment=current('delComment')||delivery.__v14Comment||''}
+  function restoreDeliveryHeader(){if(tab!=='delivery')return;setValue('delEmp',delivery.__v14Employee||'');if(delivery.__v14Supplier)setValue('delSup',delivery.__v14Supplier);if(delivery.__v14Location)setValue('delLoc',delivery.__v14Location);setValue('delDoc',delivery.__v14Document||'');setValue('delComment',delivery.__v14Comment||'')}
+
+  function speechCtor(){return window.SpeechRecognition||window.webkitSpeechRecognition||null}
+  function voiceTo(targetId,append,button){
+    var Ctor=speechCtor();
+    if(!Ctor){toast('Речевой ввод недоступен в этом режиме. Используйте диктовку микрофона на клавиатуре iPhone.',true);return}
+    var recognition=new Ctor();
+    recognition.lang='ru-RU';recognition.continuous=false;recognition.interimResults=false;recognition.maxAlternatives=1;
+    if(button){button.disabled=true;button.textContent='● Слушаю…'}
+    recognition.onresult=function(e){var result=e&&e.results&&e.results[0]&&e.results[0][0]?clean(e.results[0][0].transcript):'';var target=document.getElementById(targetId);if(result&&target){target.value=append&&clean(target.value)?clean(target.value)+' '+result:result;try{target.dispatchEvent(new Event('input',{bubbles:true}));target.dispatchEvent(new Event('change',{bubbles:true}))}catch(_){}saveDeliveryHeader()}if(button){button.disabled=false;button.textContent='🎙 Речь'}};
+    recognition.onerror=function(e){if(button){button.disabled=false;button.textContent='🎙 Речь'}toast('Микрофон: '+String(e&&e.error?e.error:'не удалось распознать речь'),true)};
+    recognition.onend=function(){if(button){button.disabled=false;button.textContent='🎙 Речь'}};
+    try{recognition.start()}catch(e){if(button){button.disabled=false;button.textContent='🎙 Речь'}toast('Микрофон: '+String(e&&e.message?e.message:e),true)}
+  }
+  function addVoiceButton(targetId,insertAfter,append){var target=document.getElementById(targetId);if(!target||document.getElementById('voice_'+targetId))return;var b=document.createElement('button');b.id='voice_'+targetId;b.type='button';b.className='secondary';b.textContent='🎙 Речь';b.style.marginTop='6px';b.onclick=function(){voiceTo(targetId,append,b)};(insertAfter||target).insertAdjacentElement('afterend',b)}
+
+  function extractInvoiceNumber(raw){var lines=String(raw||'').split(/\\r?\\n/).slice(0,35);var labeled=/(?:ттн|тн|товарно[- ]транспортная\\s+накладная|накладная|invoice)\\s*(?:№|no\\.?|n)?\\s*[:#-]?\\s*([a-zа-я0-9][a-zа-я0-9./_-]{1,30})/i;var num=/(?:№|no\\.?)\\s*([a-zа-я0-9][a-zа-я0-9./_-]{1,30})/i;for(var i=0;i<lines.length;i++){var m=lines[i].match(labeled)||lines[i].match(num);if(m&&m[1])return clean(m[1])}return ''}
+  function detectSupplier(raw){var hay=norm(String(raw||'').split(/\\r?\\n/).slice(0,30).join(' ')),best=null,bestLen=0;(S.suppliers||[]).forEach(function(s){if(s.active===false)return;var name=norm(s.name);if(name.length>=3&&hay.indexOf(name)>=0&&name.length>bestLen){best=s;bestLen=name.length}});return best}
+  function extractCost(line){var values=String(line||'').match(/(?:^|[^0-9])(\\d{1,6}[.,]\\d{2})(?!\\d)/g)||[];for(var i=0;i<values.length;i++){var m=values[i].match(/(\\d{1,6}[.,]\\d{2})/);var v=m?Number(m[1].replace(',','.')):NaN;if(Number.isFinite(v)&&v>0.01&&v<100000)return v}return null}
+  function applyInvoiceMetadata(){var raw=delivery.rawText||'';if(!clean(raw))return;var doc=extractInvoiceNumber(raw),supplier=detectSupplier(raw);if(doc){delivery.__v14Document=doc;setValue('delDoc',doc)}if(supplier){delivery.__v14Supplier=supplier.id;setValue('delSup',supplier.id)}var costAdded=0;(delivery.lines||[]).forEach(function(line){if(line.cost!=null&&clean(line.cost)!=='')return;var cost=extractCost(line.source||'');if(cost!=null){line.cost=cost;costAdded++}});saveDeliveryHeader();var state=document.getElementById('ocrState');if(state){var parts=[];if(doc)parts.push('накладная №'+doc);if(supplier)parts.push('поставщик '+supplier.name);if(costAdded)parts.push('цены '+costAdded+' поз.');state.textContent='OCR выполнен автоматически'+(parts.length?'. Заполнено: '+parts.join(', '):'')+'. Проверьте строки перед проведением.'}}
+
+  var baseRunOcr=runOcr;
+  runOcr=async function(){saveDeliveryHeader();await baseRunOcr();setTimeout(function(){restoreDeliveryHeader();applyInvoiceMetadata();enhanceDeliveryVoiceAndInvoice()},30)};
+
+  function useInvoiceFile(file){if(!file)return;delivery.file=file;var state=document.getElementById('ocrState');if(state)state.textContent='Выбран файл: '+file.name+'. Запускаю распознавание…';setTimeout(function(){runOcr()},40)}
+  function enhanceInvoiceChooser(){var lines=document.getElementById('delLines');if(!lines||document.getElementById('v14InvoiceChooser'))return;var base=document.getElementById('invoiceFile');if(base&&base.parentElement)base.parentElement.style.display='none';var ocr=document.getElementById('ocrBtn');if(ocr)ocr.style.display='none';var box=document.createElement('div');box.id='v14InvoiceChooser';box.className='card';box.innerHTML='<b>Накладная / ТТН — автоматическое распознавание</b><div class="muted" style="margin:7px 0 10px">Сфотографируйте накладную или выберите готовое фото/скан. После выбора OCR запускается автоматически.</div><div class="toolbar"><button id="v14InvoiceCamera">📷 Сфотографировать накладную</button><button id="v14InvoiceGallery" class="secondary">🖼 Выбрать фото / скан</button><button id="v14InvoiceRepeat" class="secondary">✨ Распознать ещё раз</button></div><input id="v14InvoiceCameraFile" type="file" accept="image/*" capture="environment" style="display:none"><input id="v14InvoiceGalleryFile" type="file" accept="image/*" style="display:none">';lines.parentNode.insertBefore(box,lines);document.getElementById('v14InvoiceCamera').onclick=function(){document.getElementById('v14InvoiceCameraFile').click()};document.getElementById('v14InvoiceGallery').onclick=function(){document.getElementById('v14InvoiceGalleryFile').click()};document.getElementById('v14InvoiceRepeat').onclick=function(){if(!delivery.file){toast('Сначала выберите или сфотографируйте накладную',true);return}runOcr()};document.getElementById('v14InvoiceCameraFile').onchange=function(e){useInvoiceFile(e.target.files&&e.target.files[0])};document.getElementById('v14InvoiceGalleryFile').onchange=function(e){useInvoiceFile(e.target.files&&e.target.files[0])}}
+  function enhanceDeliveryVoiceAndInvoice(){if(tab!=='delivery')return;restoreDeliveryHeader();var search=document.getElementById('v14DeliverySearch');addVoiceButton('delEmp');addVoiceButton('delDoc');addVoiceButton('delComment',null,true);if(search)addVoiceButton('v14DeliverySearch');enhanceInvoiceChooser();applyInvoiceMetadata()}
+
+  var previousRender=render;
+  render=function(){if(tab==='delivery')saveDeliveryHeader();previousRender();if(tab==='delivery')enhanceDeliveryVoiceAndInvoice()};
+  render();
+})();
+</script>`;
+
 function patchHtml(source: string) {
   let html = source;
 
@@ -147,7 +192,7 @@ function patchHtml(source: string) {
 
   const navCss = `<style id="bali-v14-runtime-nav">.tabs b{display:grid!important;place-items:center;height:22px;margin-bottom:2px}.tabs b svg{display:block}.tabs button{line-height:1.1}.tabs button.active b{color:#39ff6a}.v14CountFilter.active{background:#39ff6a!important;color:#031408!important}</style>`;
   html = html.replace('</head>', navCss + '\n</head>');
-  html = html.replace('</body>', scannerEnhancement + '\n</body>');
+  html = html.replace('</body>', scannerEnhancement + '\n' + voiceInvoiceEnhancement + '\n</body>');
 
   return html;
 }
@@ -158,12 +203,16 @@ function audit(html: string) {
   const v14SnapshotPos = html.indexOf('baseSnapshot=snapshot');
   const navMatch = html.match(/nav\.innerHTML='<button data-tab="home" class="active">[\s\S]*?<\/button>';/)?.[0] || '';
   const scannerFlows = html.includes('__BALI_V14_SCAN_WORKFLOWS__') && html.includes('СОХРАНИТЬ → СЛЕДУЮЩИЙ СКАН') && html.includes('Закупочная цена обязательна для каждой позиции поставки.') && html.includes('ДАННЫЕ ВВЕДЕНЫ') && html.includes('НЕ ВВЕДЕНО');
+  const voiceInput = html.includes('__BALI_V14_VOICE_INPUT__') && html.includes('SpeechRecognition') && html.includes('webkitSpeechRecognition') && html.includes("recognition.lang='ru-RU'");
+  const invoiceAuto = html.includes('__BALI_V14_INVOICE_AUTO__') && html.includes('Сфотографировать накладную') && html.includes('Выбрать фото / скан') && html.includes('Запускаю распознавание') && html.includes('applyInvoiceMetadata');
   return {
-    ok: remainingLegacy === 0 && snapshotPos >= 0 && v14SnapshotPos > snapshotPos && scannerFlows && navMatch.includes('Главная') && navMatch.includes('Склад') && navMatch.includes('Переучёт') && navMatch.includes('Закупки') && navMatch.includes('Поставка') && navMatch.includes('Настройки') && !navMatch.includes('data-tab="history"'),
+    ok: remainingLegacy === 0 && snapshotPos >= 0 && v14SnapshotPos > snapshotPos && scannerFlows && voiceInput && invoiceAuto && navMatch.includes('Главная') && navMatch.includes('Склад') && navMatch.includes('Переучёт') && navMatch.includes('Закупки') && navMatch.includes('Поставка') && navMatch.includes('Настройки') && !navMatch.includes('data-tab="history"'),
     remaining_legacy_return_comma: remainingLegacy,
     snapshot_found: snapshotPos >= 0,
     snapshot_before_v14: v14SnapshotPos > snapshotPos,
     scanner_workflows: scannerFlows,
+    voice_input: voiceInput,
+    invoice_auto: invoiceAuto,
     history_in_runtime_nav: navMatch.includes('data-tab="history"'),
     runtime_nav: navMatch.replace(/<svg[\s\S]*?<\/svg>/g, '[icon]'),
   };
@@ -171,9 +220,9 @@ function audit(html: string) {
 
 Deno.serve(async (req: Request) => {
   try {
-    const response = await fetch(`${UPSTREAM}?runtime=4&ts=${Date.now()}`, {
+    const response = await fetch(`${UPSTREAM}?runtime=5&ts=${Date.now()}`, {
       cache: 'no-store',
-      headers: { 'User-Agent': 'BALI-STOCK-iOS-Runtime/4', Accept: 'text/html,*/*' },
+      headers: { 'User-Agent': 'BALI-STOCK-iOS-Runtime/5', Accept: 'text/html,*/*' },
     });
     if (!response.ok) throw new Error(`upstream HTTP ${response.status}`);
     const html = patchHtml(await response.text());
