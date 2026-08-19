@@ -129,14 +129,14 @@ void main() {
 
   test('V14 product card contract includes mandatory delivery cost, image, spot count and batch editing', () {
     final controller = File('lib/v14_controller.dart').readAsStringSync();
-    final detail = File('lib/screens/product_detail_v14_screen.dart').readAsStringSync();
+    final detail = File('lib/screens/product_detail_compact_v14_screen.dart').readAsStringSync();
     final bulk = File('lib/screens/bulk_product_edit_v14_screen.dart').readAsStringSync();
 
     expect(controller.contains('Закупочная цена обязательна для каждой позиции поставки'), isTrue);
     expect(controller.contains('uploadProductImage'), isTrue);
     expect(controller.contains("_outbox.enqueue('spot_stocktake'"), isTrue);
     expect(controller.contains("_outbox.enqueue('catalog_product_batch'"), isTrue);
-    expect(detail.contains('Точечный переучёт'), isTrue);
+    expect(detail.contains('ПЕРЕУЧЕСТЬ ТОВАР'), isTrue);
     expect(detail.contains('Добавить фото'), isTrue);
     expect(detail.contains('Продажи и цены'), isTrue);
     expect(bulk.contains('Массовое редактирование'), isTrue);
