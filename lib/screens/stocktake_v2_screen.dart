@@ -1,16 +1,16 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../controller.dart';
 import '../models.dart';
 import '../services/pdf_export_service.dart';
 import '../services/stocktake_note_store.dart';
+import '../widgets/bali_nav_icon.dart';
 import '../widgets/common.dart';
+import '../widgets/product_code_actions.dart';
 
 class StocktakeV2Screen extends StatefulWidget {
   const StocktakeV2Screen({super.key, required this.controller, required this.onCompleted});
@@ -34,7 +34,7 @@ class _StocktakeV2ScreenState extends State<StocktakeV2Screen> with WidgetsBindi
   Timer? _clock;
   bool _loading = true;
   bool _submitting = false;
-  bool _onlyUnfilled = false;
+  _StocktakeListFilter _listFilter = _StocktakeListFilter.all;
   int _activeSeconds = 0;
   int _lastPersistedSeconds = 0;
 
@@ -307,6 +307,15 @@ class _StocktakeV2ScreenState extends State<StocktakeV2Screen> with WidgetsBindi
     return null;
   }
 
+  SavedStocktakeLine? _lineForProduct(Product product) {
+    final draft = _draft;
+    if (draft == null) return null;
+    for (final line in draft.lines) {
+      if (line.productId == product.id || line.productName.toLowerCase() == product.name.toLowerCase()) return line;
+    }
+    return null;
+  }
+
   bool _isSuspicious(SavedStocktakeLine line) {
     final actual = _actualTotal(line);
     if (actual == null || !line.beforeInitialized) return false;
@@ -320,42 +329,200 @@ class _StocktakeV2ScreenState extends State<StocktakeV2Screen> with WidgetsBindi
     return false;
   }
 
-  Future<String?> _scanBarcode() async {
-    if (!(Platform.isAndroid || Platform.isIOS)) return null;
-    String? result;
-    await Navigator.of(context).push(MaterialPageRoute<void>(
-      fullscreenDialog: true,
-      builder: (pageContext) => Scaffold(
-        appBar: AppBar(title: const Text('Сканировать товар'), leading: IconButton(onPressed: () => Navigator.pop(pageContext), icon: const Icon(Icons.close))),
-        body: MobileScanner(
-          onDetect: (capture) {
-            if (result != null || capture.barcodes.isEmpty) return;
-            final raw = capture.barcodes.first.rawValue;
-            if (raw == null || raw.isEmpty) return;
-            result = raw;
-            Navigator.pop(pageContext);
-          },
-        ),
-      ),
-    ));
-    return result;
-  }
-
-  Future<void> _scanAndFind() async {
-    final code = await _scanBarcode();
+  Future<void> _manualCode() async {
+    final code = await enterProductCode(context);
     if (!mounted || code == null) return;
-    Product? found;
-    for (final product in widget.controller.products) {
-      if (product.barcode == code) {
-        found = product;
-        break;
-      }
-    }
-    if (found == null) {
-      showErrorSnack(context, 'Штрихкод $code не привязан ни к одной позиции.');
+    final product = findProductByCode(widget.controller.products, code);
+    if (product == null) {
+      showErrorSnack(context, 'Код товара ${code.trim()} не привязан ни к одной позиции.');
       return;
     }
-    _search.text = found.name;
+    final line = _lineForProduct(product);
+    if (line == null) {
+      showErrorSnack(context, 'Товар не входит в текущий переучёт.');
+      return;
+    }
+    await _showQuickCount(line, allowNextScan: false);
+  }
+
+  Future<void> _scanWorkflow() async {
+    while (mounted) {
+      final code = await scanProductCode(context);
+      if (!mounted || code == null) return;
+      final product = findProductByCode(widget.controller.products, code);
+      if (product == null) {
+        showErrorSnack(context, 'Код товара ${code.trim()} не привязан ни к одной позиции. Сканируйте следующий товар или закройте сканер.');
+        continue;
+      }
+      final line = _lineForProduct(product);
+      if (line == null) {
+        showErrorSnack(context, 'Товар ${product.name} не входит в текущий переучёт.');
+        continue;
+      }
+      final result = await _showQuickCount(line, allowNextScan: true);
+      if (!mounted || result == null || result == _QuickCountResult.saved) return;
+    }
+  }
+
+  Future<_QuickCountResult?> _showQuickCount(SavedStocktakeLine line, {required bool allowNextScan}) async {
+    final current = _entries[line.productId]!;
+    final whole = TextEditingController(text: current.whole.text);
+    final extra = TextEditingController(text: line.stockUnit == StockUnit.piece ? '0' : current.extra.text);
+    final comment = TextEditingController(text: _comments[line.productId] ?? '');
+    final key = GlobalKey<FormState>();
+    var saving = false;
+
+    final result = await showDialog<_QuickCountResult>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: Row(
+            children: [
+              const BaliNavIcon(kind: BaliNavIconKind.stocktake, active: true, size: 24),
+              const SizedBox(width: 10),
+              Expanded(child: Text(line.productName)),
+            ],
+          ),
+          content: SizedBox(
+            width: 620,
+            child: Form(
+              key: key,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    InfoBanner(
+                      icon: _isFilled(line) ? Icons.check_circle_outline : Icons.pending_actions,
+                      text: _isFilled(line)
+                          ? 'По этой позиции данные уже были введены. Можно пересчитать и заменить значение.'
+                          : 'Введите фактическое наличие. После сохранения позиция будет отмечена как «Данные введены».',
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      line.beforeInitialized
+                          ? 'Расчётный остаток до переучёта: ${formatStockParts(line.beforeTotal, line.packageSize, line.stockUnit)}'
+                          : 'Первичная инвентаризация — предыдущий остаток не задан',
+                    ),
+                    const SizedBox(height: 12),
+                    if (line.stockUnit == StockUnit.piece)
+                      IntegerField(controller: whole, label: 'Фактически, шт.', min: 0)
+                    else
+                      TwoFields(
+                        first: IntegerField(controller: whole, label: line.stockUnit == StockUnit.ml ? 'Целых бутылок' : 'Целых упаковок', min: 0),
+                        second: IntegerField(
+                          controller: extra,
+                          label: 'Доп. остаток, ${line.stockUnit.symbol}',
+                          min: 0,
+                          validator: (value) {
+                            final base = integerValidator(value, min: 0);
+                            if (base != null) return base;
+                            final parsed = int.tryParse(value ?? '');
+                            return parsed != null && parsed >= line.packageSize ? 'Меньше ${line.packageSize}' : null;
+                          },
+                        ),
+                      ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: comment,
+                      maxLines: 2,
+                      decoration: const InputDecoration(labelText: 'Комментарий (необязательно)'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: saving ? null : () => Navigator.pop(dialogContext), child: const Text('Отмена')),
+            FilledButton.icon(
+              onPressed: saving
+                  ? null
+                  : () async {
+                      if (!(key.currentState?.validate() ?? false)) return;
+                      final wholeValue = int.tryParse(whole.text);
+                      final extraValue = line.stockUnit == StockUnit.piece ? 0 : int.tryParse(extra.text);
+                      if (wholeValue == null || wholeValue < 0 || extraValue == null || extraValue < 0 || (line.stockUnit != StockUnit.piece && extraValue >= line.packageSize)) {
+                        showErrorSnack(dialogContext, 'Проверьте количество');
+                        return;
+                      }
+                      setState(() => saving = true);
+                      try {
+                        current.whole.text = '$wholeValue';
+                        current.extra.text = '$extraValue';
+                        final note = comment.text.trim();
+                        if (note.isEmpty) {
+                          _comments.remove(line.productId);
+                        } else {
+                          _comments[line.productId] = note;
+                        }
+                        _rechecked.remove(line.productId);
+                        await widget.controller.saveStocktakeDraftLine(
+                          draftId: _draft!.id,
+                          productId: line.productId,
+                          wholePackages: wholeValue,
+                          extraAmount: extraValue,
+                        );
+                        await _noteStore.save(_draft!.id, comments: _comments, rechecked: _rechecked);
+                        if (mounted) setState(() {});
+                        if (dialogContext.mounted) Navigator.pop(dialogContext, _QuickCountResult.saved);
+                      } catch (e) {
+                        if (dialogContext.mounted) showErrorSnack(dialogContext, e);
+                        setState(() => saving = false);
+                      }
+                    },
+              icon: const Icon(Icons.check_circle_outline),
+              label: const Text('Сохранить'),
+            ),
+            if (allowNextScan)
+              FilledButton.icon(
+                onPressed: saving
+                    ? null
+                    : () async {
+                        if (!(key.currentState?.validate() ?? false)) return;
+                        final wholeValue = int.tryParse(whole.text);
+                        final extraValue = line.stockUnit == StockUnit.piece ? 0 : int.tryParse(extra.text);
+                        if (wholeValue == null || wholeValue < 0 || extraValue == null || extraValue < 0 || (line.stockUnit != StockUnit.piece && extraValue >= line.packageSize)) {
+                          showErrorSnack(dialogContext, 'Проверьте количество');
+                          return;
+                        }
+                        setState(() => saving = true);
+                        try {
+                          current.whole.text = '$wholeValue';
+                          current.extra.text = '$extraValue';
+                          final note = comment.text.trim();
+                          if (note.isEmpty) {
+                            _comments.remove(line.productId);
+                          } else {
+                            _comments[line.productId] = note;
+                          }
+                          _rechecked.remove(line.productId);
+                          await widget.controller.saveStocktakeDraftLine(
+                            draftId: _draft!.id,
+                            productId: line.productId,
+                            wholePackages: wholeValue,
+                            extraAmount: extraValue,
+                          );
+                          await _noteStore.save(_draft!.id, comments: _comments, rechecked: _rechecked);
+                          if (mounted) setState(() {});
+                          if (dialogContext.mounted) Navigator.pop(dialogContext, _QuickCountResult.savedAndScanNext);
+                        } catch (e) {
+                          if (dialogContext.mounted) showErrorSnack(dialogContext, e);
+                          setState(() => saving = false);
+                        }
+                      },
+                icon: const BaliNavIcon(kind: BaliNavIconKind.scan, active: true, size: 19),
+                label: const Text('Сохранить → следующий скан'),
+              ),
+          ],
+        ),
+      ),
+    );
+    whole.dispose();
+    extra.dispose();
+    comment.dispose();
+    return result;
   }
 
   List<SavedStocktakeLine> _visibleLines() {
@@ -363,9 +530,12 @@ class _StocktakeV2ScreenState extends State<StocktakeV2Screen> with WidgetsBindi
     if (draft == null) return const [];
     final q = _search.text.trim().toLowerCase();
     return draft.lines.where((line) {
-      if (_onlyUnfilled && _isFilled(line)) return false;
+      final filled = _isFilled(line);
+      if (_listFilter == _StocktakeListFilter.unfilled && filled) return false;
+      if (_listFilter == _StocktakeListFilter.filled && !filled) return false;
       if (q.isEmpty) return true;
-      return line.productName.toLowerCase().contains(q) || line.categoryName.toLowerCase().contains(q);
+      final barcode = _productFor(line)?.barcode ?? '';
+      return '${line.productName} ${line.categoryName} $barcode'.toLowerCase().contains(q);
     }).toList(growable: false);
   }
 
@@ -550,7 +720,7 @@ class _StocktakeV2ScreenState extends State<StocktakeV2Screen> with WidgetsBindi
     final draft = _draft;
     if (draft == null || _submitting) return;
     if (_filledCount != draft.totalCount) {
-      setState(() => _onlyUnfilled = true);
+      setState(() => _listFilter = _StocktakeListFilter.unfilled);
       showErrorSnack(context, 'Не заполнено ${draft.totalCount - _filledCount} позиций. Для завершения нужно пересчитать весь склад.');
       return;
     }
@@ -636,6 +806,7 @@ class _StocktakeV2ScreenState extends State<StocktakeV2Screen> with WidgetsBindi
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
             color: Theme.of(context).colorScheme.surfaceContainerLow,
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Row(
                   children: [
@@ -645,26 +816,52 @@ class _StocktakeV2ScreenState extends State<StocktakeV2Screen> with WidgetsBindi
                   ],
                 ),
                 const SizedBox(height: 10),
-                Row(
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
                   children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _search,
-                        decoration: InputDecoration(
-                          prefixIcon: const Icon(Icons.search),
-                          hintText: 'Найти позицию или категорию',
-                          suffixIcon: (Platform.isAndroid || Platform.isIOS)
-                              ? IconButton(onPressed: _scanAndFind, tooltip: 'Сканировать штрихкод', icon: const Icon(Icons.qr_code_scanner))
-                              : null,
-                        ),
-                      ),
+                    FilledButton.tonalIcon(
+                      onPressed: _submitting ? null : _scanWorkflow,
+                      icon: const BaliNavIcon(kind: BaliNavIconKind.scan, active: true, size: 20),
+                      label: const Text('Сканировать товар'),
                     ),
-                    const SizedBox(width: 10),
-                    FilterChip(
-                      selected: _onlyUnfilled,
-                      onSelected: (value) => setState(() => _onlyUnfilled = value),
+                    OutlinedButton.icon(
+                      onPressed: _submitting ? null : _manualCode,
+                      icon: const Icon(Icons.pin_outlined),
+                      label: const Text('Ввести код товара'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _search,
+                  decoration: const InputDecoration(
+                    prefixIcon: Icon(Icons.search),
+                    hintText: 'Название / категория / код товара',
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    ChoiceChip(
+                      selected: _listFilter == _StocktakeListFilter.all,
+                      onSelected: (_) => setState(() => _listFilter = _StocktakeListFilter.all),
+                      avatar: const Icon(Icons.view_list_outlined, size: 18),
+                      label: Text('Все • ${draft.totalCount}'),
+                    ),
+                    ChoiceChip(
+                      selected: _listFilter == _StocktakeListFilter.unfilled,
+                      onSelected: (_) => setState(() => _listFilter = _StocktakeListFilter.unfilled),
                       avatar: const Icon(Icons.pending_actions, size: 18),
-                      label: const Text('Только не заполнено'),
+                      label: Text('Не введено • ${draft.totalCount - filled}'),
+                    ),
+                    ChoiceChip(
+                      selected: _listFilter == _StocktakeListFilter.filled,
+                      onSelected: (_) => setState(() => _listFilter = _StocktakeListFilter.filled),
+                      avatar: const Icon(Icons.check_circle_outline, size: 18),
+                      label: Text('Введено • $filled'),
                     ),
                   ],
                 ),
@@ -675,7 +872,7 @@ class _StocktakeV2ScreenState extends State<StocktakeV2Screen> with WidgetsBindi
             Padding(padding: const EdgeInsets.fromLTRB(16, 10, 16, 0), child: InfoBanner(icon: Icons.cloud_off, text: widget.controller.syncWarning!)),
           Expanded(
             child: visible.isEmpty
-                ? const EmptyState(icon: Icons.search_off, title: 'Ничего не найдено', message: 'Измените поиск или отключите фильтр «Только не заполнено».')
+                ? const EmptyState(icon: Icons.search_off, title: 'Ничего не найдено', message: 'Измените поиск или выберите другой фильтр.')
                 : ListView(
                     padding: const EdgeInsets.fromLTRB(16, 14, 16, 120),
                     children: [
@@ -741,9 +938,15 @@ class _StocktakeV2ScreenState extends State<StocktakeV2Screen> with WidgetsBindi
                 Expanded(child: Text(line.productName, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900))),
                 if (wasRechecked) const Chip(avatar: Icon(Icons.verified, size: 17), label: Text('перепроверено')),
                 if (suspicious && !wasRechecked) Chip(avatar: Icon(Icons.warning_amber_rounded, size: 17, color: Theme.of(context).colorScheme.error), label: const Text('нужен повторный пересчёт')),
-                const SizedBox(width: 6),
-                Icon(filled ? Icons.check_circle : Icons.radio_button_unchecked, color: filled ? Theme.of(context).colorScheme.primary : null),
               ],
+            ),
+            const SizedBox(height: 7),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Chip(
+                avatar: Icon(filled ? Icons.check_circle : Icons.pending_actions, size: 18),
+                label: Text(filled ? 'ДАННЫЕ ВВЕДЕНЫ' : 'НЕ ВВЕДЕНО'),
+              ),
             ),
             const SizedBox(height: 5),
             Text(
@@ -793,6 +996,8 @@ class _StocktakeV2ScreenState extends State<StocktakeV2Screen> with WidgetsBindi
 }
 
 enum _DraftAction { resume, restart, cancel }
+enum _StocktakeListFilter { all, unfilled, filled }
+enum _QuickCountResult { saved, savedAndScanNext }
 
 class _CountEntry {
   _CountEntry({required String whole, required String extra})
