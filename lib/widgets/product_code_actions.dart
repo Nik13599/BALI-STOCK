@@ -21,41 +21,53 @@ Future<String?> scanProductCode(BuildContext context) async {
       MaterialPageRoute(builder: (_) => const ProductCodeScannerScreen()),
     );
   }
+  return _showCodeDialog(
+    context,
+    title: 'Сканировать код товара',
+    helper: 'Отсканируйте код USB/Bluetooth-сканером. Поле уже в фокусе; большинство сканеров отправляют Enter автоматически.',
+    hint: 'Сканируйте штрихкод / QR-код',
+  );
+}
 
+Future<String?> enterProductCode(BuildContext context) => _showCodeDialog(
+      context,
+      title: 'Введите код товара',
+      hint: 'Например: 4601234567890',
+    );
+
+Future<String?> _showCodeDialog(
+  BuildContext context, {
+  required String title,
+  required String hint,
+  String? helper,
+}) async {
   final field = TextEditingController();
   final result = await showDialog<String>(
     context: context,
     builder: (dialogContext) => AlertDialog(
-      title: const Text('Сканировать код товара'),
+      title: Text(title),
       content: SizedBox(
         width: 520,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Отсканируйте код USB/Bluetooth-сканером. Поле уже в фокусе; большинство сканеров отправляют Enter автоматически.'),
-            const SizedBox(height: 14),
+            if (helper != null) ...[
+              Text(helper),
+              const SizedBox(height: 14),
+            ],
             TextField(
               controller: field,
               autofocus: true,
-              decoration: const InputDecoration(labelText: 'Код товара', hintText: 'Сканируйте штрихкод / QR-код'),
-              onSubmitted: (value) {
-                final code = value.trim();
-                if (code.isNotEmpty) Navigator.of(dialogContext).pop(code);
-              },
+              decoration: InputDecoration(labelText: 'Код товара', hintText: hint),
+              onSubmitted: (value) => _closeWithCode(dialogContext, value),
             ),
           ],
         ),
       ),
       actions: [
         TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('Отмена')),
-        FilledButton(
-          onPressed: () {
-            final code = field.text.trim();
-            if (code.isNotEmpty) Navigator.of(dialogContext).pop(code);
-          },
-          child: const Text('Найти'),
-        ),
+        FilledButton(onPressed: () => _closeWithCode(dialogContext, field.text), child: const Text('Найти')),
       ],
     ),
   );
@@ -63,33 +75,7 @@ Future<String?> scanProductCode(BuildContext context) async {
   return result;
 }
 
-Future<String?> enterProductCode(BuildContext context) async {
-  final field = TextEditingController();
-  final result = await showDialog<String>(
-    context: context,
-    builder: (dialogContext) => AlertDialog(
-      title: const Text('Введите код товара'),
-      content: TextField(
-        controller: field,
-        autofocus: true,
-        decoration: const InputDecoration(labelText: 'Код товара', hintText: 'Например: 4601234567890'),
-        onSubmitted: (value) {
-          final code = value.trim();
-          if (code.isNotEmpty) Navigator.of(dialogContext).pop(code);
-        },
-      ),
-      actions: [
-        TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('Отмена')),
-        FilledButton(
-          onPressed: () {
-            final code = field.text.trim();
-            if (code.isNotEmpty) Navigator.of(dialogContext).pop(code);
-          },
-          child: const Text('Найти'),
-        ),
-      ],
-    ),
-  );
-  field.dispose();
-  return result;
+void _closeWithCode(BuildContext context, String value) {
+  final code = value.trim();
+  if (code.isNotEmpty) Navigator.of(context).pop(code);
 }
