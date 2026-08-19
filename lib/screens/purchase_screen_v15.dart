@@ -153,7 +153,8 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
     final query = _search.text.trim().toLowerCase();
     final categoryOrder = {for (final category in widget.controller.categories) category.name: category.sortOrder};
     final result = widget.controller.products.where((product) {
-      if (!product.active || !product.stockInitialized) return false;
+      if (!product.active) return false;
+      if (_tab == _PurchaseTab.needed && !product.stockInitialized) return false;
       if (_tab == _PurchaseTab.needed && _recommendedBase(product) <= 0 && _packages(product) <= 0) return false;
       if (!_passesQuickFilter(product)) return false;
       if (_supplierFilter != null && _supplierId(product) != _supplierFilter) return false;
@@ -206,7 +207,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
           categoryName: product.categoryName,
           stockUnit: product.stockUnit,
           packageSize: product.packageSize,
-          currentQuantity: product.totalAmount,
+          currentQuantity: product.stockInitialized ? product.totalAmount : 0,
           minimumAmount: product.minimumAmount,
           targetAmount: product.targetAmount,
           suggestedQuantity: _packages(product) * _packageBase(product),
@@ -367,15 +368,18 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
         ),
       );
 
-  Widget _tabs() => SegmentedButton<_PurchaseTab>(
-        segments: const [
-          ButtonSegment(value: _PurchaseTab.needed, label: Text('Нужно заказать'), icon: BaliNavIcon(kind: BaliNavIconKind.purchases, size: 18)),
-          ButtonSegment(value: _PurchaseTab.catalog, label: Text('Все товары'), icon: BaliNavIcon(kind: BaliNavIconKind.stock, size: 18)),
-          ButtonSegment(value: _PurchaseTab.requests, label: Text('Заявки'), icon: BaliNavIcon(kind: BaliNavIconKind.history, size: 18)),
-        ],
-        selected: {_tab},
-        showSelectedIcon: false,
-        onSelectionChanged: (value) => setState(() => _tab = value.first),
+  Widget _tabs() => SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: SegmentedButton<_PurchaseTab>(
+          segments: const [
+            ButtonSegment(value: _PurchaseTab.needed, label: Text('Нужно заказать'), icon: BaliNavIcon(kind: BaliNavIconKind.purchases, size: 18)),
+            ButtonSegment(value: _PurchaseTab.catalog, label: Text('Все товары'), icon: BaliNavIcon(kind: BaliNavIconKind.stock, size: 18)),
+            ButtonSegment(value: _PurchaseTab.requests, label: Text('Заявки'), icon: BaliNavIcon(kind: BaliNavIconKind.history, size: 18)),
+          ],
+          selected: {_tab},
+          showSelectedIcon: false,
+          onSelectionChanged: (value) => setState(() => _tab = value.first),
+        ),
       );
 
   Widget _summary() {
@@ -445,7 +449,11 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
   Widget _catalog() {
     final products = _visibleProducts();
     if (products.isEmpty) {
-      return const EmptyState(icon: Icons.shopping_cart_outlined, title: 'Нет позиций', message: 'Измените фильтры или откройте «Все товары».');
+      final hasUninitialized = widget.controller.products.any((product) => product.active && !product.stockInitialized);
+      final message = _tab == _PurchaseTab.needed && hasUninitialized
+          ? 'Автоматические рекомендации появятся после первичного переучёта. Полный ассортимент уже доступен во вкладке «Все товары».'
+          : 'Измените фильтры или откройте «Все товары».';
+      return EmptyState(icon: Icons.shopping_cart_outlined, title: 'Нет позиций', message: message);
     }
     final groups = <String, List<Product>>{};
     for (final product in products) {
@@ -495,7 +503,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
           ],
           const SizedBox(height: 8),
           Wrap(spacing: 14, runSpacing: 5, children: [
-            Text('Сейчас: ${formatStockParts(product.totalAmount, product.packageSize, product.stockUnit)}'),
+            Text('Сейчас: ${product.stockInitialized ? formatStockParts(product.totalAmount, product.packageSize, product.stockUnit) : 'остаток не введён'}'),
             Text('Минимум: ${formatMinimumAmount(product.minimumAmount, product.stockUnit)}'),
             if (product.targetAmount > 0) Text('Цель: ${formatTotalAmount(product.targetAmount, product.stockUnit)}'),
             Text('Уже заказано: ${ordered == 0 ? '0' : formatStockParts(ordered, product.packageSize, product.stockUnit)}'),
@@ -503,7 +511,12 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
           const SizedBox(height: 8),
           LayoutBuilder(builder: (context, constraints) {
             final narrow = constraints.maxWidth < 460;
-            final recommendation = Text('Рекомендуется: $recommended ${product.stockUnit.packageLabel}', style: const TextStyle(fontWeight: FontWeight.w900));
+            final recommendation = Text(
+              product.stockInitialized
+                  ? 'Рекомендуется: $recommended ${product.stockUnit.packageLabel}'
+                  : 'Рекомендация — после первичного переучёта',
+              style: const TextStyle(fontWeight: FontWeight.w900),
+            );
             final counter = _Counter(
               value: packages,
               unit: product.stockUnit.packageLabel,
