@@ -1,13 +1,12 @@
-const _encodedOperationCredential = <int>[107, 105, 111, 99, 99];
+const _automaticOperationSession = 'automatic';
 
-String get operationSessionCredential =>
-    String.fromCharCodes(_encodedOperationCredential.map((value) => value ^ 0x5A));
+String get operationSessionCredential => _automaticOperationSession;
 
-bool verifyOperationPin(String value) => value == operationSessionCredential;
+/// Passwords and PIN codes are not used by BALI STOCK.
+bool verifyOperationPin(String _) => true;
 
-/// Operational authorization is automatic. Users never enter or manage a PIN.
-String? get lastVerifiedOperationPin => operationSessionCredential;
+/// Backwards-compatible value for controller methods that still accept the old
+/// operation-session parameter. The server no longer treats it as a password.
+String? get lastVerifiedOperationPin => _automaticOperationSession;
 
-/// Kept for backwards-compatible controller calls. Automatic authorization
-/// remains available after an operation is completed.
 void clearRememberedOperationPin() {}
