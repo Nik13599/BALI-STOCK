@@ -54,16 +54,17 @@ void main() {
     expect(history.contains('operation, required this.onPdf, required this.onOpen, required this.onDelete'), isFalse);
   });
 
-  test('iPhone profile uses V16 launcher on top of the stabilized runtime', () {
+  test('iPhone profile uses the V16 production launcher on the stabilized runtime', () {
     final generator = File('tool/generate_mobileconfig.py').readAsStringSync();
     final launcher = File('ios-web/launch-v16.html').readAsStringSync();
     final catalog = File('ios-web/v16-catalog-history.js').readAsStringSync();
     final ui = File('ios-web/v15-ui.js').readAsStringSync();
     final delivery = File('ios-web/v15-delivery-link.js').readAsStringSync();
 
-    expect(generator.contains('launch-v16.html'), isTrue);
-    expect(generator.contains('BALI STOCK V16'), isTrue);
+    expect(generator.contains('/BALI-STOCK/production/ios-web/launch-v16.html'), isTrue);
+    expect(generator.contains('production-версию BALI STOCK'), isTrue);
     expect(launcher.contains('bali-stock-ios-runtime'), isTrue);
+    expect(launcher.contains('/BALI-STOCK/production/ios-web/'), isTrue);
     expect(launcher.contains('v16-catalog-history.js'), isTrue);
     expect(launcher.contains('return,[A-Za-z_\$][A-Za-z0-9_\$]*='), isTrue);
     expect(launcher.contains('async function snapshot'), isTrue);
