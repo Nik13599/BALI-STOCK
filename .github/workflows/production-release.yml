@@ -265,7 +265,9 @@ jobs:
               profile = plistlib.load(f)
           clip = profile["PayloadContent"][0]
           assert clip["PayloadType"] == "com.apple.webClip.managed"
-          assert "/BALI-STOCK/production/ios-web/launch-v16.html" in clip["URL"]
+          expected = "https://mvnxfouyoynqyjdpcblh.supabase.co/functions/v1/bali-stock-ios-runtime"
+          assert clip["URL"] == expected, clip["URL"]
+          assert "github" not in clip["URL"].lower()
           assert clip["Icon"]
           print("production iPhone profile:", clip["URL"])
           PY
@@ -315,7 +317,7 @@ jobs:
           Production release channel: production
           Windows: install BALI-STOCK-Windows-Setup.exe over the previous version.
           Android: install BALI-STOCK-Android.apk over the previous production-signed version.
-          iPhone: install BALI-STOCK-iPhone.mobileconfig once; later production releases are loaded from the production channel.
+          iPhone: install BALI-STOCK-iPhone.mobileconfig once; later updates are loaded from the stable Supabase runtime and do not depend on GitHub visibility.
           EOF
       - name: Publish or update GitHub release
         env:
@@ -338,6 +340,6 @@ jobs:
             gh release create "$TAG" "${ASSETS[@]}" \
               --target "$GITHUB_SHA" \
               --title "BALI STOCK $VERSION" \
-              --notes "Production release BALI STOCK $VERSION (build $BUILD). Windows and Android are upgrade-compatible production packages. iPhone Web Clip follows the production branch." \
+              --notes "Production release BALI STOCK $VERSION (build $BUILD). Windows and Android remain upgrade-compatible. iPhone Web Clip uses the stable Supabase runtime and is independent of repository visibility." \
               --latest
           fi
