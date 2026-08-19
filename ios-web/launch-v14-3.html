@@ -84,7 +84,59 @@
   setTimeout(ensureScanButton,1000);
 })();
 <\/script>`;
-    html = html.replace('</body>', scanSafety + '\n</body>');
+
+    const compactProductCard = `<script id="bali-v14-compact-product-card">
+(function(){
+  'use strict';
+  window.__BALI_V14_COMPACT_PRODUCT_CARD__='v14.6';
+  var originalShow=null;
+
+  function safe(v){return String(v==null?'':v)}
+  function lower(v){return safe(v).trim().toLowerCase()}
+  function money2(v){var x=Number(v);return v==null||!Number.isFinite(x)?'—':x.toFixed(2).replace('.',',')+' BYN'}
+  function date2(v){var d=new Date(v);if(!v||isNaN(d.getTime()))return '—';return d.toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}
+  function unit2(p){return p.stock_unit==='pcs'?'шт.':p.stock_unit==='g'?'г':'мл'}
+  function parts2(value,p){try{return parts(Number(value||0),p)}catch(_){return safe(value)+' '+unit2(p)}}
+  function key2(p){try{return keyOf(p)}catch(_){return lower(p.name)+'|'+safe(p.stock_unit)+'|'+safe(p.package_size)}}
+  function isInit(p){try{return init(p)}catch(_){return !!(p.balance&&p.balance.initialized)}}
+  function quantity(p){try{return qty(p)}catch(_){return Number(p.balance&&p.balance.quantity_base||0)}}
+  function productLine(o,p){var wanted=key2(p),name=lower(p.name);return (o.lines||[]).find(function(l){return l.product_key===wanted||lower(l.product_name)===name})||null}
+  function latest(p,types){var best=null;(S.operations||[]).forEach(function(o){if(types&&types.indexOf(o.operation_type)<0)return;if(!productLine(o,p))return;if(!best||new Date(o.created_at)>new Date(best.created_at))best=o});return best}
+  function status(p){var q=quantity(p),min=Number(p.minimum_amount||0);if(!isInit(p))return {text:'НЕ ВВЕДЕНО',cls:'neutral'};if(q<=0)return {text:'НЕТ В НАЛИЧИИ',cls:'danger'};if(min>0&&q<=Math.ceil(min/2))return {text:'КРИТИЧНО',cls:'danger'};if(min>0&&q<=min)return {text:'МАЛО',cls:'warn'};return {text:'НОРМА',cls:'ok'}}
+  function supplierName(op){if(!op||!op.supplier_id)return '—';var s=(S.suppliers||[]).find(function(x){return x.id===op.supplier_id});return s?s.name:'—'}
+  function movement(p){var op=latest(p,null);if(!op)return '—';var l=productLine(op,p),d=l?Number(l.change_quantity||0):0,delta=d===0?'':(' '+(d>0?'+':'−')+parts2(Math.abs(d),p));var names={delivery:'Поставка',stocktake:'Переучёт',spot_stocktake:'Точечный переучёт',writeoff:'Списание',transfer:'Перемещение',correction:'Корректировка'};return (names[op.operation_type]||op.operation_type)+delta+' • '+date2(op.created_at)}
+  function pct(v){return v==null||!Number.isFinite(v)?'—':v.toFixed(1).replace('.',',')+'%'}
+  function economics(p){var cost=p.default_cost==null?null:Number(p.default_cost),size=Number(p.package_size||0),base=cost!=null&&size>0?cost/size:null,bottle=p.bottle_sale_price==null?null:Number(p.bottle_sale_price),profit=cost!=null&&bottle!=null?bottle-cost:null,margin=profit!=null&&bottle?profit/bottle*100:null,markup=profit!=null&&cost?profit/cost*100:null,stock=base!=null&&isInit(p)?base*quantity(p):null,revenue=bottle!=null&&isInit(p)&&size>0?quantity(p)/size*bottle:null;return {base:base,profit:profit,margin:margin,markup:markup,stock:stock,revenue:revenue}}
+  function rows(items){return items.map(function(x){return '<div class="v14pc-row"><span>'+esc(x[0])+'</span><b>'+esc(x[1])+'</b></div>'}).join('')}
+  function ensureStyle(){if(document.getElementById('baliCompactCardCss'))return;var s=document.createElement('style');s.id='baliCompactCardCss';s.textContent='.v14pc{max-width:720px;margin:0 auto}.v14pc-hero{display:grid;grid-template-columns:84px minmax(0,1fr);gap:12px;align-items:start}.v14pc-img{width:84px;height:84px;object-fit:contain;border-radius:14px;background:#fff}.v14pc-placeholder{width:84px;height:84px;border-radius:14px;background:#18281d;display:grid;place-items:center;font-size:28px}.v14pc-title{font-size:21px;font-weight:900;line-height:1.05;overflow-wrap:anywhere}.v14pc-cat{color:#39ff6a;font-weight:800;margin-top:3px}.v14pc-code{font-size:12px;color:#9fb3a5;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.v14pc-qty{font-size:20px;font-weight:900;margin-top:7px}.v14pc-status{display:inline-flex;border-radius:999px;padding:4px 8px;font-size:11px;font-weight:900;margin-top:6px;border:1px solid #456}.v14pc-status.ok{color:#39ff6a;border-color:#39ff6a88;background:#39ff6a16}.v14pc-status.warn{color:#ffb547;border-color:#ffb54788;background:#ffb54716}.v14pc-status.danger{color:#ff6b74;border-color:#ff6b7488;background:#ff6b7416}.v14pc-status.neutral{color:#a8b3ac}.v14pc-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:9px}.v14pc-card{background:#101c15;border:1px solid #294233;border-radius:14px;padding:11px}.v14pc-head{font-weight:900;margin-bottom:6px}.v14pc-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:8px;padding:3px 0;font-size:12.5px}.v14pc-row span{color:#9fb3a5;overflow:hidden;text-overflow:ellipsis}.v14pc-row b{text-align:right;overflow-wrap:anywhere}.v14pc-sale{margin-top:8px}.v14pc-chips{display:flex;gap:6px;flex-wrap:wrap}.v14pc-chip{border:1px solid #294233;border-radius:999px;padding:5px 8px;font-size:12px;font-weight:800}.v14pc-primary{width:100%;margin-top:10px}.v14pc-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px}.v14pc-actions button{margin-top:7px}.v14pc details{background:#101c15;border:1px solid #294233;border-radius:14px;margin-top:8px;padding:0 11px}.v14pc summary{cursor:pointer;padding:11px 0;font-weight:900}.v14pc-hist{border-top:1px solid #294233;padding:8px 0;font-size:12.5px}@media(max-width:520px){.v14pc{width:100%}.v14pc-grid{grid-template-columns:1fr}.v14pc-hero{grid-template-columns:76px minmax(0,1fr)}.v14pc-img,.v14pc-placeholder{width:76px;height:76px}.v14pc-title{font-size:19px}.v14pc-qty{font-size:18px}.v14pc-row{font-size:12px}.v14pc-actions{grid-template-columns:1fr}}';document.head.appendChild(s)}
+  function invokeOriginal(p,id){if(!originalShow)return;originalShow(p);setTimeout(function(){var b=document.getElementById(id);if(b)b.click()},0)}
+
+  function install(){
+    if(typeof window.v14ShowProduct!=='function')return false;
+    if(window.v14ShowProduct.__compactV14)return true;
+    originalShow=window.v14ShowProduct;
+    ensureStyle();
+    var compact=function(p){
+      var st=status(p),lastDelivery=latest(p,['delivery']),lastCount=latest(p,['stocktake','spot_stocktake']),eco=economics(p),prices=Array.isArray(p.portion_prices)?p.portion_prices:[],audit=(S.catalog_audit||[]).filter(function(a){return a.product_key===key2(p)}).slice(0,12);
+      var image=p.image_url?'<img class="v14pc-img" src="'+esc(p.image_url)+'">':'<div class="v14pc-placeholder">▣</div>';
+      var sale=[];if(p.sell_by_bottle===true&&p.bottle_sale_price!=null)sale.push('<div class="v14pc-row"><span>Бутылка / упаковка</span><b>'+esc(money2(p.bottle_sale_price))+'</b></div>');if(p.portion_sale===true&&prices.length)sale.push('<div class="v14pc-chips">'+prices.map(function(x){return '<span class="v14pc-chip">'+esc(safe(x.ml))+' '+unit2(p)+' · '+esc(money2(x.price))+'</span>'}).join('')+'</div>');if(!sale.length)sale.push('<div class="muted">Цены продажи пока не настроены.</div>');
+      var econRows=rows([['Закупка за упаковку',money2(p.default_cost)],['Себестоимость 1 '+unit2(p),money2(eco.base)],['Стоимость остатка',money2(eco.stock)],['Прибыль с бутылки',money2(eco.profit)],['Наценка',pct(eco.markup)],['Маржа',pct(eco.margin)],['Потенциальная выручка',money2(eco.revenue)]]);
+      var history=audit.length?audit.map(function(a){var b=a.before_data||{},z=a.after_data||{},changed=b.bottle_sale_price!==z.bottle_sale_price;return '<div class="v14pc-hist"><b>'+(changed?'Цена: '+esc(safe(b.bottle_sale_price||'—'))+' → '+esc(safe(z.bottle_sale_price||'—'))+' BYN':'Изменение карточки')+'</b><div class="muted">'+date2(a.created_at)+(a.actor?' • '+esc(a.actor):'')+'</div></div>'}).join(''):'<div class="muted" style="padding-bottom:10px">Изменений пока нет.</div>';
+      openModal('<div class="v14pc"><div class="v14pc-hero">'+image+'<div><div class="v14pc-title">'+esc(p.name)+'</div><div class="v14pc-cat">'+esc(p.category_name)+'</div>'+(p.barcode?'<div class="v14pc-code">Код '+esc(p.barcode)+'</div>':'')+'<div class="v14pc-qty">'+(isInit(p)?esc(parts2(quantity(p),p)):'Остаток не введён')+'</div><span class="v14pc-status '+st.cls+'">'+st.text+'</span></div></div><div class="v14pc-grid"><div class="v14pc-card"><div class="v14pc-head">Склад</div>'+rows([['Сейчас',isInit(p)?parts2(quantity(p),p):'Не введён'],['Минимум',parts2(Number(p.minimum_amount||0),p)],['Последний переучёт',lastCount?date2(lastCount.created_at):'—'],['Последнее движение',movement(p)]])+'</div><div class="v14pc-card"><div class="v14pc-head">Закупка</div>'+rows([['Последняя цена',money2(p.default_cost)],['Поставщик',supplierName(lastDelivery)],['Последняя поставка',lastDelivery?date2(lastDelivery.created_at):'—']])+'</div></div><div class="v14pc-card v14pc-sale"><div class="v14pc-head">Продажа</div>'+sale.join('')+'</div><button id="v14pcStocktake" class="v14pc-primary">ПЕРЕУЧЕСТЬ ТОВАР</button><div class="v14pc-actions"><button id="v14pcEdit" class="secondary">Продажи и цены</button><button id="v14pcPhoto" class="secondary">Фото</button></div><details><summary>Экономика</summary>'+econRows+'</details><details><summary>История карточки</summary>'+history+'</details><button id="v14pcClose" class="secondary" style="width:100%;margin-top:8px">Закрыть</button><input id="v14pcPhotoInput" type="file" accept="image/*" style="display:none"></div>');
+      document.getElementById('v14pcClose').onclick=closeModal;
+      document.getElementById('v14pcStocktake').onclick=function(){closeModal();invokeOriginal(p,'v14Spot')};
+      document.getElementById('v14pcEdit').onclick=function(){closeModal();invokeOriginal(p,'v14Edit')};
+      document.getElementById('v14pcPhoto').onclick=function(){closeModal();invokeOriginal(p,'v14Photo')};
+    };
+    compact.__compactV14=true;
+    window.v14ShowProduct=compact;
+    return true;
+  }
+  if(!install()){var tries=0,t=setInterval(function(){tries++;if(install()||tries>40)clearInterval(t)},100)}
+})();
+<\/script>`;
+
+    html = html.replace('</body>', scanSafety + '\n' + compactProductCard + '\n</body>');
 
     document.open();
     document.write(html);
