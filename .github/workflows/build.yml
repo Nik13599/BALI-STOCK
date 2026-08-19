@@ -63,14 +63,14 @@ jobs:
       - run: flutter pub get
       - run: dart run flutter_launcher_icons
       - run: flutter build apk --release
-      - name: Prepare Android installer
+      - name: Prepare Android CI package
         run: |
           mkdir -p dist/android
-          cp build/app/outputs/flutter-apk/app-release.apk dist/android/BALI-STOCK-Android-v16.apk
+          cp build/app/outputs/flutter-apk/app-release.apk dist/android/BALI-STOCK-Android-CI.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: BALI-STOCK-Android-Installer
-          path: dist/android/BALI-STOCK-Android-v16.apk
+          name: BALI-STOCK-Android-CI
+          path: dist/android/BALI-STOCK-Android-CI.apk
           if-no-files-found: error
 
   windows:
@@ -83,29 +83,9 @@ jobs:
         with:
           channel: stable
           cache: true
-      - run: flutter config --enable-windows-desktop
-      - run: flutter create . --project-name bali_stock --org com.bali.stock --platforms=windows,android,ios
-      - run: flutter pub get
-      - run: dart run flutter_launcher_icons
-      - run: flutter build windows --release
-      - name: Bundle Microsoft VC++ runtime
+      - name: Build Windows release bundle
         shell: pwsh
-        run: |
-          $release = Resolve-Path 'build/windows/x64/runner/Release'
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          if (-not (Test-Path $vswhere)) { throw "vswhere.exe not found" }
-          $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-          if (-not $vs) { throw "Visual Studio C++ tools not found" }
-          $redistRoot = Join-Path $vs 'VC\Redist\MSVC'
-          $crt = Get-ChildItem $redistRoot -Directory | Sort-Object Name -Descending | ForEach-Object {
-            $candidate = Join-Path $_.FullName 'x64\Microsoft.VC143.CRT'
-            if (Test-Path $candidate) { $candidate }
-          } | Select-Object -First 1
-          if (-not $crt) { throw "Microsoft.VC143.CRT x64 redistributable directory not found" }
-          Copy-Item (Join-Path $crt '*.dll') -Destination $release -Force
-          foreach ($dll in @('msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')) {
-            if (-not (Test-Path (Join-Path $release $dll))) { throw "Required VC runtime DLL missing: $dll" }
-          }
+        run: ./tool/build_windows_release.ps1
       - name: Install Inno Setup when missing
         shell: pwsh
         run: |
@@ -117,14 +97,16 @@ jobs:
       - name: Build Windows setup EXE
         shell: pwsh
         run: |
+          $line = Get-Content pubspec.yaml | Where-Object { $_ -match '^version:' } | Select-Object -First 1
+          $version = (($line -replace '^version:\s*','').Split('+')[0])
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-          & $iscc "/DMyAppVersion=0.16.0" "installer/windows/bali_stock.iss"
+          & $iscc "/DMyAppVersion=$version" "/DMyOutputBaseFilename=BALI-STOCK-Windows-CI-Setup" "installer/windows/bali_stock.iss"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if (-not (Test-Path 'dist/windows/BALI-STOCK-Windows-v16-Setup.exe')) { throw "Setup EXE was not created" }
+          if (-not (Test-Path 'dist/windows/BALI-STOCK-Windows-CI-Setup.exe')) { throw "Setup EXE was not created" }
       - uses: actions/upload-artifact@v4
         with:
-          name: BALI-STOCK-Windows-Installer
-          path: dist/windows/BALI-STOCK-Windows-v16-Setup.exe
+          name: BALI-STOCK-Windows-CI
+          path: dist/windows/BALI-STOCK-Windows-CI-Setup.exe
           if-no-files-found: error
 
   ios:
@@ -173,11 +155,11 @@ jobs:
       - name: Pack unsigned native iOS app
         run: |
           mkdir -p dist/ios
-          ditto -c -k --sequesterRsrc --keepParent build/ios/iphoneos/Runner.app dist/ios/BALI-STOCK-iOS-v16-unsigned.app.zip
+          ditto -c -k --sequesterRsrc --keepParent build/ios/iphoneos/Runner.app dist/ios/BALI-STOCK-iOS-CI-unsigned.app.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: BALI-STOCK-iOS-unsigned
-          path: dist/ios/BALI-STOCK-iOS-v16-unsigned.app.zip
+          name: BALI-STOCK-iOS-CI-unsigned
+          path: dist/ios/BALI-STOCK-iOS-CI-unsigned.app.zip
           if-no-files-found: error
 
   ios_webclip:
@@ -200,12 +182,12 @@ jobs:
           clip = profile['PayloadContent'][0]
           assert clip['PayloadType'] == 'com.apple.webClip.managed'
           assert clip['URL'].startswith('https://')
-          assert clip['URL'].endswith('/ios-web/launch-v16.html')
+          assert '/BALI-STOCK/production/ios-web/launch-v16.html' in clip['URL']
           assert clip['Icon']
-          print('mobileconfig V16 OK:', clip['URL'])
+          print('mobileconfig production channel OK:', clip['URL'])
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: BALI-STOCK-iPhone-WebClip
+          name: BALI-STOCK-iPhone-WebClip-CI
           path: dist/ios/BALI-STOCK-iPhone.mobileconfig
           if-no-files-found: error

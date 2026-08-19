@@ -1,0 +1,343 @@
+name: Release BALI STOCK Production
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "pubspec.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bali-stock-production-release
+  cancel-in-progress: false
+
+jobs:
+  quality:
+    name: production-quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter create . --project-name bali_stock --org com.bali.stock --platforms=android,ios,windows
+      - run: flutter pub get
+      - run: python tool/code_health_check.py --fail-on-orphans --fail-on-clones
+      - run: flutter analyze
+      - run: flutter test
+      - name: Validate production version
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          text = Path("pubspec.yaml").read_text(encoding="utf-8")
+          m = re.search(r"^version:\s*([0-9]+\.[0-9]+\.[0-9]+)\+([0-9]+)\s*$", text, re.M)
+          if not m:
+              raise SystemExit("pubspec version must be semantic version + integer build number")
+          print("production version:", m.group(1), "build:", m.group(2))
+          PY
+
+  android:
+    name: production-android
+    needs: quality
+    runs-on: ubuntu-latest
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_STORE_PASSWORD_SECRET: ${{ secrets.ANDROID_STORE_PASSWORD }}
+      ANDROID_KEY_ALIAS_SECRET: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD_SECRET: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      SUPABASE_URL: https://mvnxfouyoynqyjdpcblh.supabase.co
+      SUPABASE_PUBLISHABLE_KEY: sb_publishable_Tq2niBP0_2KuzTEuip8Oeg_1HhCUo29
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter create . --project-name bali_stock --org com.bali.stock --platforms=android,ios,windows
+      - name: Ensure Android release permissions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('android/app/src/main/AndroidManifest.xml')
+          text = p.read_text(encoding='utf-8')
+          marker = '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
+          permissions = [
+              '<uses-permission android:name="android.permission.INTERNET" />',
+              '<uses-permission android:name="android.permission.CAMERA" />',
+          ]
+          additions = [f"    {x}" for x in permissions if x not in text]
+          if additions:
+              text = text.replace(marker, marker + "\n" + "\n".join(additions))
+              p.write_text(text, encoding='utf-8')
+          PY
+      - run: flutter pub get
+      - run: dart run flutter_launcher_icons
+      - name: Prepare stable Android production signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(sed -n 's/^version:[[:space:]]*\([0-9.]*\)+.*/\1/p' pubspec.yaml)"
+          KEYSTORE="$RUNNER_TEMP/bali-stock-production.jks"
+          ALIAS="${ANDROID_KEY_ALIAS_SECRET:-bali_stock_prod}"
+          BOOTSTRAP=false
+
+          if [ -n "${ANDROID_KEYSTORE_BASE64:-}" ] && [ -n "${ANDROID_STORE_PASSWORD_SECRET:-}" ] && [ -n "${ANDROID_KEY_PASSWORD_SECRET:-}" ] && [ -n "${ANDROID_KEY_ALIAS_SECRET:-}" ]; then
+            printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
+            STORE_PASS="$ANDROID_STORE_PASSWORD_SECRET"
+            KEY_PASS="$ANDROID_KEY_PASSWORD_SECRET"
+          else
+            if [ "$VERSION" != "1.0.0" ]; then
+              echo "Production Android signing secrets are required after the initial 1.0.0 release." >&2
+              exit 1
+            fi
+            BOOTSTRAP=true
+            STORE_PASS="$(openssl rand -hex 32)"
+            KEY_PASS="$(openssl rand -hex 32)"
+            ARCHIVE_PASS="$(openssl rand -hex 48)"
+            ALIAS="bali_stock_prod"
+
+            echo "::add-mask::$STORE_PASS"
+            echo "::add-mask::$KEY_PASS"
+            echo "::add-mask::$ARCHIVE_PASS"
+
+            keytool -genkeypair -v \
+              -keystore "$KEYSTORE" \
+              -storetype JKS \
+              -storepass "$STORE_PASS" \
+              -keypass "$KEY_PASS" \
+              -alias "$ALIAS" \
+              -keyalg RSA \
+              -keysize 4096 \
+              -validity 10000 \
+              -dname "CN=BALI STOCK Production,O=BALI,C=BY"
+
+            CERT_SHA256="$(keytool -exportcert -alias "$ALIAS" -keystore "$KEYSTORE" -storepass "$STORE_PASS" 2>/dev/null | sha256sum | awk '{print $1}')"
+            echo "Production Android signing certificate SHA-256: $CERT_SHA256"
+
+            mkdir -p dist/signing
+            ARCHIVE_PASSWORD="$ARCHIVE_PASS" openssl enc -aes-256-cbc -salt -pbkdf2 -iter 250000 \
+              -in "$KEYSTORE" \
+              -out dist/signing/BALI-STOCK-Android-Production-Key.jks.enc \
+              -pass env:ARCHIVE_PASSWORD
+
+            RELEASE_TAG="v$VERSION" STORE_PASSWORD="$STORE_PASS" KEY_PASSWORD="$KEY_PASS" KEY_ALIAS="$ALIAS" ARCHIVE_PASSWORD="$ARCHIVE_PASS" CERT_SHA256="$CERT_SHA256" \
+            python - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          endpoint = os.environ["SUPABASE_URL"] + "/rest/v1/stock_release_signing_bootstrap"
+          body = json.dumps({
+              "release_tag": os.environ["RELEASE_TAG"],
+              "archive_password": os.environ["ARCHIVE_PASSWORD"],
+              "store_password": os.environ["STORE_PASSWORD"],
+              "key_password": os.environ["KEY_PASSWORD"],
+              "key_alias": os.environ["KEY_ALIAS"],
+              "cert_sha256": os.environ["CERT_SHA256"],
+          }).encode("utf-8")
+          req = urllib.request.Request(
+              endpoint,
+              data=body,
+              method="POST",
+              headers={
+                  "apikey": os.environ["SUPABASE_PUBLISHABLE_KEY"],
+                  "Authorization": "Bearer " + os.environ["SUPABASE_PUBLISHABLE_KEY"],
+                  "Content-Type": "application/json",
+                  "Prefer": "return=minimal",
+              },
+          )
+          with urllib.request.urlopen(req, timeout=20) as response:
+              if response.status not in (200, 201, 204):
+                  raise RuntimeError(f"bootstrap secret escrow failed: HTTP {response.status}")
+          PY
+          fi
+
+          echo "ANDROID_KEYSTORE_PATH=$KEYSTORE" >> "$GITHUB_ENV"
+          echo "ANDROID_STORE_PASSWORD=$STORE_PASS" >> "$GITHUB_ENV"
+          echo "ANDROID_KEY_PASSWORD=$KEY_PASS" >> "$GITHUB_ENV"
+          echo "ANDROID_KEY_ALIAS=$ALIAS" >> "$GITHUB_ENV"
+          echo "ANDROID_SIGNING_BOOTSTRAP=$BOOTSTRAP" >> "$GITHUB_ENV"
+      - name: Configure Gradle release signing
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path("android/app/build.gradle.kts")
+          text = p.read_text(encoding="utf-8")
+          if 'create("release")' not in text:
+              marker = "    buildTypes {"
+              block = '''    signingConfigs {
+                  create("release") {
+                      storeFile = file(System.getenv("ANDROID_KEYSTORE_PATH"))
+                      storePassword = System.getenv("ANDROID_STORE_PASSWORD")
+                      keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                      keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+                  }
+              }
+
+          '''
+              if marker not in text:
+                  raise SystemExit("Android buildTypes marker not found")
+              text = text.replace(marker, block + marker, 1)
+          text = text.replace('signingConfig = signingConfigs.getByName("debug")', 'signingConfig = signingConfigs.getByName("release")')
+          p.write_text(text, encoding="utf-8")
+          PY
+      - run: flutter build apk --release
+      - name: Verify Android production signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          APKSIGNER="$(find "$SDK/build-tools" -type f -name apksigner 2>/dev/null | sort -V | tail -1)"
+          if [ -z "$APKSIGNER" ]; then
+            echo "apksigner not found" >&2
+            exit 1
+          fi
+          "$APKSIGNER" verify --verbose --print-certs build/app/outputs/flutter-apk/app-release.apk
+          mkdir -p dist/android
+          cp build/app/outputs/flutter-apk/app-release.apk dist/android/BALI-STOCK-Android.apk
+          "$APKSIGNER" verify --print-certs dist/android/BALI-STOCK-Android.apk > dist/android/BALI-STOCK-Android-Signing.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: production-android
+          path: dist/android/*
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: env.ANDROID_SIGNING_BOOTSTRAP == 'true'
+        with:
+          name: production-android-signing-backup-encrypted
+          path: dist/signing/BALI-STOCK-Android-Production-Key.jks.enc
+          if-no-files-found: error
+          retention-days: 1
+
+  windows:
+    name: production-windows
+    needs: quality
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Build Windows release bundle
+        shell: pwsh
+        run: ./tool/build_windows_release.ps1
+      - name: Install Inno Setup when missing
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup --yes --no-progress }
+          if (-not (Test-Path $iscc)) { throw "Inno Setup compiler not found" }
+      - name: Build production Windows setup
+        shell: pwsh
+        run: |
+          $line = Get-Content pubspec.yaml | Where-Object { $_ -match '^version:' } | Select-Object -First 1
+          $version = (($line -replace '^version:\s*','').Split('+')[0])
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          & $iscc "/DMyAppVersion=$version" "/DMyOutputBaseFilename=BALI-STOCK-Windows-Setup" "installer/windows/bali_stock.iss"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path 'dist/windows/BALI-STOCK-Windows-Setup.exe')) { throw "Setup EXE was not created" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: production-windows
+          path: dist/windows/BALI-STOCK-Windows-Setup.exe
+          if-no-files-found: error
+
+  iphone:
+    name: production-iphone-webclip
+    needs: quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python tool/generate_mobileconfig.py
+      - name: Validate production iPhone profile
+        run: |
+          python - <<'PY'
+          import plistlib
+          from pathlib import Path
+          p = Path("dist/ios/BALI-STOCK-iPhone.mobileconfig")
+          with p.open("rb") as f:
+              profile = plistlib.load(f)
+          clip = profile["PayloadContent"][0]
+          assert clip["PayloadType"] == "com.apple.webClip.managed"
+          assert "/BALI-STOCK/production/ios-web/launch-v16.html" in clip["URL"]
+          assert clip["Icon"]
+          print("production iPhone profile:", clip["URL"])
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: production-iphone
+          path: dist/ios/BALI-STOCK-iPhone.mobileconfig
+          if-no-files-found: error
+
+  publish:
+    name: publish-production-release
+    needs: [quality, android, windows, iphone]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: production-android
+          path: release
+      - uses: actions/download-artifact@v4
+        with:
+          name: production-windows
+          path: release
+      - uses: actions/download-artifact@v4
+        with:
+          name: production-iphone
+          path: release
+      - name: Prepare production branch and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(sed -n 's/^version:[[:space:]]*\([0-9.]*\)+.*/\1/p' pubspec.yaml)"
+          BUILD="$(sed -n 's/^version:[[:space:]]*[0-9.]*+\([0-9]*\).*/\1/p' pubspec.yaml)"
+          TAG="v$VERSION"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "BUILD=$BUILD" >> "$GITHUB_ENV"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+
+          git config user.name "BALI STOCK Release"
+          git config user.email "release@bali-stock.local"
+          git push origin "$GITHUB_SHA:refs/heads/production" --force
+
+          cd release
+          sha256sum BALI-STOCK-Windows-Setup.exe BALI-STOCK-Android.apk BALI-STOCK-iPhone.mobileconfig > BALI-STOCK-SHA256.txt
+          cat > BALI-STOCK-RELEASE.txt <<EOF
+          BALI STOCK $VERSION (build $BUILD)
+          Production release channel: production
+          Windows: install BALI-STOCK-Windows-Setup.exe over the previous version.
+          Android: install BALI-STOCK-Android.apk over the previous production-signed version.
+          iPhone: install BALI-STOCK-iPhone.mobileconfig once; later production releases are loaded from the production channel.
+          EOF
+      - name: Publish or update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ASSETS=(
+            release/BALI-STOCK-Windows-Setup.exe
+            release/BALI-STOCK-Android.apk
+            release/BALI-STOCK-Android-Signing.txt
+            release/BALI-STOCK-iPhone.mobileconfig
+            release/BALI-STOCK-SHA256.txt
+            release/BALI-STOCK-RELEASE.txt
+          )
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${ASSETS[@]}" --clobber
+            gh release edit "$TAG" --title "BALI STOCK $VERSION" --latest
+          else
+            gh release create "$TAG" "${ASSETS[@]}" \
+              --target "$GITHUB_SHA" \
+              --title "BALI STOCK $VERSION" \
+              --notes "Production release BALI STOCK $VERSION (build $BUILD). Windows and Android are upgrade-compatible production packages. iPhone Web Clip follows the production branch." \
+              --latest
+          fi
