@@ -14,17 +14,34 @@ class CatalogEditorServiceV16 {
   Future<Map<String, dynamic>> saveBatch({
     required String employee,
     required List<Map<String, dynamic>> items,
-  }) async {
+  }) {
     if (items.isEmpty) throw ArgumentError('Не выбраны изменения каталога');
+    return _post({
+      'action': 'catalog_product_batch',
+      'employee': employee.trim(),
+      'items': items,
+    });
+  }
+
+  Future<Map<String, dynamic>> deleteProduct({
+    required String employee,
+    required String productKey,
+  }) {
+    final key = productKey.trim();
+    if (key.isEmpty) throw ArgumentError('Не указан товар для удаления');
+    return _post({
+      'action': 'product_delete',
+      'employee': employee.trim(),
+      'product_key': key,
+    });
+  }
+
+  Future<Map<String, dynamic>> _post(Map<String, dynamic> body) async {
     final response = await http
         .post(
           Uri.parse(endpoint),
           headers: {..._remote.readHeaders, 'Content-Type': 'application/json'},
-          body: jsonEncode({
-            'action': 'catalog_product_batch',
-            'employee': employee.trim(),
-            'items': items,
-          }),
+          body: jsonEncode(body),
         )
         .timeout(const Duration(seconds: 45));
 
@@ -34,7 +51,7 @@ class CatalogEditorServiceV16 {
       if (decoded is Map<String, dynamic>) data = decoded;
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw StateError((data['error'] ?? 'Не удалось сохранить каталог (${response.statusCode})').toString());
+      throw StateError((data['error'] ?? 'Не удалось изменить каталог (${response.statusCode})').toString());
     }
     return data;
   }
