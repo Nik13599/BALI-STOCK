@@ -6,7 +6,7 @@ import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_URL = "https://raw.githack.com/Nik13599/BALI-STOCK/main/ios-web/launch-v15.html"
+DEFAULT_URL = "https://raw.githack.com/Nik13599/BALI-STOCK/main/ios-web/launch-v16.html"
 
 
 def main() -> None:
@@ -28,7 +28,7 @@ def main() -> None:
                 "IgnoreManifestScope": False,
                 "IsRemovable": True,
                 "Label": args.label,
-                "PayloadDescription": "Устанавливает актуальную версию BALI STOCK V15 на экран Домой.",
+                "PayloadDescription": "Устанавливает актуальную версию BALI STOCK V16 на экран Домой.",
                 "PayloadDisplayName": "BALI STOCK",
                 "PayloadIdentifier": "com.bali.stock.webclip",
                 "PayloadType": "com.apple.webClip.managed",
@@ -38,7 +38,7 @@ def main() -> None:
                 "URL": args.url,
             }
         ],
-        "PayloadDescription": "BALI STOCK V15 — складской учёт, закупки, поставки и переучёт BALI.",
+        "PayloadDescription": "BALI STOCK V16 — складской учёт, закупки, поставки и переучёт BALI.",
         "PayloadDisplayName": "BALI STOCK",
         "PayloadIdentifier": "com.bali.stock.profile",
         "PayloadOrganization": "BALI",
