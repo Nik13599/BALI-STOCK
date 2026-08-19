@@ -35,6 +35,12 @@ class InvoiceRecognitionV15Result {
 class InvoiceRecognitionServiceV15 {
   final legacy.InvoiceRecognitionService _legacy = legacy.InvoiceRecognitionService();
 
+  bool looksLikeInvoiceText(String rawText, {required List<Product> products}) =>
+      _validateInvoice(rawText, products).accepted;
+
+  double invoiceTextConfidence(String rawText, {required List<Product> products}) =>
+      _validateInvoice(rawText, products).confidence;
+
   Future<InvoiceRecognitionV15Result> recognize({
     required String imagePath,
     required List<Product> products,
