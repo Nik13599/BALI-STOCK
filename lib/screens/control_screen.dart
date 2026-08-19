@@ -1,12 +1,10 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
-import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../controller.dart';
 import '../models.dart';
 import '../widgets/common.dart';
 import '../widgets/pin_value_dialog.dart';
+import '../widgets/product_code_actions.dart';
 import 'delivery_screen.dart' show showSupplierDialog;
 
 class ControlScreen extends StatefulWidget {
@@ -28,12 +26,12 @@ class _ControlScreenState extends State<ControlScreen> {
   }
 
   Future<bool> _authorize() async {
-    if (widget.controller.hasOperationSession && widget.controller.sharedOnline) return true;
+    if (widget.controller.hasOperationSession) return true;
     final pin = await showOperationPinValueDialog(context);
     if (!mounted || pin == null) return false;
     try {
       await widget.controller.setOperationSessionPin(pin);
-      return widget.controller.sharedOnline;
+      return widget.controller.hasOperationSession;
     } catch (e) {
       if (mounted) showErrorSnack(context, e);
       return false;
@@ -52,7 +50,7 @@ class _ControlScreenState extends State<ControlScreen> {
         locationId: result.locationId,
         comment: result.comment,
       );
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Списание проведено и видно всем устройствам.')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Списание сохранено.')));
     } catch (e) {
       if (mounted) showErrorSnack(context, e);
     }
@@ -70,7 +68,7 @@ class _ControlScreenState extends State<ControlScreen> {
         lines: result.lines,
         comment: result.comment,
       );
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Перемещение проведено. Общий остаток не изменился, место хранения обновлено.')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Перемещение сохранено.')));
     } catch (e) {
       if (mounted) showErrorSnack(context, e);
     }
@@ -105,7 +103,7 @@ class _ControlScreenState extends State<ControlScreen> {
         length: 5,
         child: Scaffold(
           appBar: AppBar(
-            title: const Text('Контроль склада'),
+            title: const Text('Управление складом'),
             actions: [
               Padding(
                 padding: const EdgeInsets.only(right: 10),
@@ -154,16 +152,16 @@ class _PurchasesTab extends StatelessWidget {
     if (items.isEmpty) {
       return const EmptyState(icon: Icons.check_circle_outline, title: 'Закупка сейчас не требуется', message: 'Все инициализированные позиции выше минимального остатка.');
     }
-    final suppliers = {for (final supplier in controller.suppliers) supplier.id: supplier.name};
+    final supplierNames = {for (final supplier in controller.suppliers) supplier.id: supplier.name};
     final grouped = <String, List<PurchaseSuggestion>>{};
     for (final item in items) {
-      final name = item.preferredSupplier == null ? 'Поставщик не назначен' : (suppliers[item.preferredSupplier] ?? 'Неизвестный поставщик');
-      grouped.putIfAbsent(name, () => []).add(item);
+      final group = item.preferredSupplier == null ? 'Поставщик не назначен' : (supplierNames[item.preferredSupplier] ?? 'Неизвестный поставщик');
+      grouped.putIfAbsent(group, () => []).add(item);
     }
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
-        const InfoBanner(icon: Icons.auto_awesome, text: 'Список формируется автоматически: если остаток достиг минимума, система предлагает довести позицию до целевого остатка. Если цель не задана — до минимума.'),
+        const InfoBanner(icon: Icons.auto_awesome, text: 'Список рассчитывается автоматически от текущего остатка до целевого остатка. Если цель не задана — до минимума.'),
         const SizedBox(height: 16),
         for (final entry in grouped.entries) ...[
           Text(entry.key.toUpperCase(), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Color(0xFF39FF6A))),
@@ -171,24 +169,9 @@ class _PurchasesTab extends StatelessWidget {
           Card(
             child: Column(
               children: [
-                for (var i = 0; i < entry.value.length; i++) ...[
-                  Builder(builder: (context) {
-                    final item = entry.value[i];
-                    final packages = item.stockUnit == StockUnit.piece ? item.suggestedQuantity : (item.suggestedQuantity / item.packageSize).ceil();
-                    return ListTile(
-                      title: Text(item.name, style: const TextStyle(fontWeight: FontWeight.w800)),
-                      subtitle: Text('${item.categoryName} • сейчас ${formatStockParts(item.currentQuantity, item.packageSize, item.stockUnit)} • минимум ${formatMinimumAmount(item.minimumAmount, item.stockUnit)}${item.targetAmount > 0 ? ' • цель ${formatMinimumAmount(item.targetAmount, item.stockUnit)}' : ''}'),
-                      trailing: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Text('Заказать: $packages ${item.stockUnit.packageLabel}', style: const TextStyle(fontWeight: FontWeight.w900)),
-                          if (item.lastPrice != null) Text('≈ ${formatMoney(item.lastPrice! * packages, item.currency)}', style: Theme.of(context).textTheme.bodySmall),
-                        ],
-                      ),
-                    );
-                  }),
-                  if (i != entry.value.length - 1) const Divider(height: 1),
+                for (var index = 0; index < entry.value.length; index++) ...[
+                  _PurchaseRow(item: entry.value[index]),
+                  if (index != entry.value.length - 1) const Divider(height: 1),
                 ],
               ],
             ),
@@ -196,6 +179,29 @@ class _PurchasesTab extends StatelessWidget {
           const SizedBox(height: 18),
         ],
       ],
+    );
+  }
+}
+
+class _PurchaseRow extends StatelessWidget {
+  const _PurchaseRow({required this.item});
+  final PurchaseSuggestion item;
+
+  @override
+  Widget build(BuildContext context) {
+    final packages = item.stockUnit == StockUnit.piece ? item.suggestedQuantity : (item.suggestedQuantity / item.packageSize).ceil();
+    final estimated = item.lastPrice == null ? null : item.lastPrice! * packages;
+    return ListTile(
+      title: Text(item.name, style: const TextStyle(fontWeight: FontWeight.w800)),
+      subtitle: Text('${item.categoryName} • сейчас ${formatStockParts(item.currentQuantity, item.packageSize, item.stockUnit)} • минимум ${formatMinimumAmount(item.minimumAmount, item.stockUnit)}${item.targetAmount > 0 ? ' • цель ${formatMinimumAmount(item.targetAmount, item.stockUnit)}' : ''}'),
+      trailing: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Text('Заказать: $packages ${item.stockUnit.packageLabel}', style: const TextStyle(fontWeight: FontWeight.w900)),
+          if (estimated != null) Text('≈ ${formatMoney(estimated, item.currency)}', style: Theme.of(context).textTheme.bodySmall),
+        ],
+      ),
     );
   }
 }
@@ -227,14 +233,14 @@ class _MovementsTab extends StatelessWidget {
         Card(
           child: Column(
             children: [
-              for (var i = 0; i < controller.locations.length; i++) ...[
+              for (var index = 0; index < controller.locations.length; index++) ...[
                 ListTile(
-                  leading: Icon(controller.locations[i].isPrimary ? Icons.warehouse : Icons.inventory_2_outlined),
-                  title: Text(controller.locations[i].name, style: const TextStyle(fontWeight: FontWeight.w800)),
-                  subtitle: Text(controller.locations[i].isPrimary ? 'Основное место хранения' : 'Дополнительное место хранения'),
-                  trailing: controller.locations[i].isPrimary ? const Chip(label: Text('Основной')) : null,
+                  leading: Icon(controller.locations[index].isPrimary ? Icons.warehouse : Icons.inventory_2_outlined),
+                  title: Text(controller.locations[index].name, style: const TextStyle(fontWeight: FontWeight.w800)),
+                  subtitle: Text(controller.locations[index].isPrimary ? 'Основное место хранения' : 'Дополнительное место хранения'),
+                  trailing: controller.locations[index].isPrimary ? const Chip(label: Text('Основной')) : null,
                 ),
-                if (i != controller.locations.length - 1) const Divider(height: 1),
+                if (index != controller.locations.length - 1) const Divider(height: 1),
               ],
             ],
           ),
@@ -278,20 +284,21 @@ class _SuppliersTab extends StatelessWidget {
               child: ListTile(
                 leading: const CircleAvatar(child: Icon(Icons.business_outlined)),
                 title: Text(supplier.name, style: const TextStyle(fontWeight: FontWeight.w900)),
-                subtitle: Text([
-                  if (supplier.contactPerson?.isNotEmpty == true) supplier.contactPerson!,
-                  if (supplier.phone?.isNotEmpty == true) supplier.phone!,
-                  if (supplier.email?.isNotEmpty == true) supplier.email!,
-                ].join(' • ').isEmpty ? 'Контакты не указаны' : [
-                  if (supplier.contactPerson?.isNotEmpty == true) supplier.contactPerson!,
-                  if (supplier.phone?.isNotEmpty == true) supplier.phone!,
-                  if (supplier.email?.isNotEmpty == true) supplier.email!,
-                ].join(' • ')),
+                subtitle: Text(_supplierContacts(supplier)),
                 trailing: Text('${controller.productSuppliers.where((link) => link.supplierId == supplier.id && link.active).length} поз.'),
               ),
             ),
       ],
     );
+  }
+
+  String _supplierContacts(StockSupplier supplier) {
+    final values = <String>[
+      if (supplier.contactPerson?.isNotEmpty == true) supplier.contactPerson!,
+      if (supplier.phone?.isNotEmpty == true) supplier.phone!,
+      if (supplier.email?.isNotEmpty == true) supplier.email!,
+    ];
+    return values.isEmpty ? 'Контакты не указаны' : values.join(' • ');
   }
 }
 
@@ -323,12 +330,15 @@ class _ProductsTabState extends State<_ProductsTab> {
   @override
   Widget build(BuildContext context) {
     final q = widget.search.text.trim().toLowerCase();
-    final products = widget.controller.products.where((p) => q.isEmpty || p.name.toLowerCase().contains(q) || p.categoryName.toLowerCase().contains(q)).toList(growable: false);
+    final products = widget.controller.products.where((product) {
+      if (q.isEmpty) return true;
+      return '${product.name} ${product.categoryName} ${product.barcode ?? ''}'.toLowerCase().contains(q);
+    }).toList(growable: false);
     return Column(
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-          child: TextField(controller: widget.search, decoration: const InputDecoration(prefixIcon: Icon(Icons.search), labelText: 'Поиск товара / категории')),
+          child: TextField(controller: widget.search, decoration: const InputDecoration(prefixIcon: Icon(Icons.search), labelText: 'Название / категория / код товара')),
         ),
         Expanded(
           child: ListView.builder(
@@ -367,7 +377,7 @@ class _AnalyticsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final data = controller.analytics;
-    final initialized = controller.products.where((p) => p.stockInitialized).toList(growable: false);
+    final initialized = controller.products.where((product) => product.stockInitialized);
     final value = initialized.fold<double>(0, (sum, product) {
       final price = product.defaultCost;
       if (price == null || product.packageSize <= 0) return sum;
@@ -398,12 +408,12 @@ class _AnalyticsTab extends StatelessWidget {
           Card(
             child: Column(
               children: [
-                for (var i = 0; i < data.largestVariances.length; i++) ...[
+                for (var index = 0; index < data.largestVariances.length; index++) ...[
                   ListTile(
-                    title: Text('${data.largestVariances[i]['product_name'] ?? ''}', style: const TextStyle(fontWeight: FontWeight.w800)),
-                    trailing: Text('${data.largestVariances[i]['variance'] ?? 0}', style: TextStyle(fontWeight: FontWeight.w900, color: Theme.of(context).colorScheme.error)),
+                    title: Text('${data.largestVariances[index]['product_name'] ?? ''}', style: const TextStyle(fontWeight: FontWeight.w800)),
+                    trailing: Text('${data.largestVariances[index]['variance'] ?? 0}', style: TextStyle(fontWeight: FontWeight.w900, color: Theme.of(context).colorScheme.error)),
                   ),
-                  if (i != data.largestVariances.length - 1) const Divider(height: 1),
+                  if (index != data.largestVariances.length - 1) const Divider(height: 1),
                 ],
               ],
             ),
@@ -437,7 +447,7 @@ Future<void> showProductHistory(BuildContext context, WarehouseController contro
                     child: ListTile(
                       leading: CircleAvatar(child: Icon(_operationIcon(row.operation.type))),
                       title: Text('${row.operation.type.displayName} • ${formatDateTime(row.operation.createdAt)}', style: const TextStyle(fontWeight: FontWeight.w800)),
-                      subtitle: Text('Было: ${formatStockParts(row.line.beforeTotalMl, row.line.bottleMl, row.line.stockUnit)}\nИзменение: ${row.line.changeTotalMl >= 0 ? '+' : ''}${formatTotalAmount(row.line.changeTotalMl.abs(), row.line.stockUnit)} • стало: ${formatStockParts(row.line.afterTotalMl, row.line.bottleMl, row.line.stockUnit)}'),
+                      subtitle: Text('Было: ${formatStockParts(row.line.beforeTotalMl, row.line.bottleMl, row.line.stockUnit)}\nИзменение: ${row.line.changeTotalMl >= 0 ? '+' : '−'}${formatTotalAmount(row.line.changeTotalMl.abs(), row.line.stockUnit)} • стало: ${formatStockParts(row.line.afterTotalMl, row.line.bottleMl, row.line.stockUnit)}'),
                     ),
                   );
                 },
@@ -452,7 +462,6 @@ Future<void> showProductControlDialog(BuildContext context, WarehouseController 
   final target = TextEditingController(text: '${product.targetAmount}');
   final recheck = TextEditingController(text: '${product.varianceRecheckAmount}');
   final barcode = TextEditingController(text: product.barcode ?? '');
-  final cost = TextEditingController(text: product.defaultCost?.toStringAsFixed(2) ?? '');
   final employee = TextEditingController();
   var saving = false;
 
@@ -461,10 +470,7 @@ Future<void> showProductControlDialog(BuildContext context, WarehouseController 
     barrierDismissible: false,
     builder: (dialogContext) => StatefulBuilder(
       builder: (context, setState) {
-        final linked = controller.productSuppliers.where((link) {
-          final key = '${product.name.trim().toLowerCase()}|${product.stockUnit.dbValue}|${product.packageSize}';
-          return link.productKey == key && link.active;
-        }).toList(growable: false);
+        final linked = controller.productSuppliers.where((link) => link.productKey == _productKey(product) && link.active).toList(growable: false);
         return AlertDialog(
           title: Text('Контроль: ${product.name}'),
           content: SizedBox(
@@ -481,26 +487,28 @@ Future<void> showProductControlDialog(BuildContext context, WarehouseController 
                     second: IntegerField(controller: target, label: 'Целевой остаток, ${product.stockUnit.symbol}', min: 0),
                   ),
                   const SizedBox(height: 12),
-                  TwoFields(
-                    first: IntegerField(controller: recheck, label: 'Повторный пересчёт при расхождении от, ${product.stockUnit.symbol}', min: 0),
-                    second: TextField(controller: cost, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Закупочная цена, BYN')),
-                  ),
+                  IntegerField(controller: recheck, label: 'Повторный пересчёт при расхождении от, ${product.stockUnit.symbol}', min: 0),
                   const SizedBox(height: 12),
                   Row(
                     children: [
-                      Expanded(child: TextField(controller: barcode, decoration: const InputDecoration(labelText: 'Штрихкод / QR-код'))),
-                      if (Platform.isAndroid || Platform.isIOS) ...[
-                        const SizedBox(width: 8),
-                        IconButton.filledTonal(
-                          tooltip: 'Сканировать код',
-                          onPressed: () async {
-                            final value = await _scanBarcode(dialogContext);
-                            if (value != null) barcode.text = value;
-                          },
-                          icon: const Icon(Icons.qr_code_scanner),
-                        ),
-                      ],
+                      Expanded(child: TextField(controller: barcode, decoration: const InputDecoration(labelText: 'Код товара / штрихкод / QR'))),
+                      const SizedBox(width: 8),
+                      IconButton.filledTonal(
+                        tooltip: 'Сканировать код товара',
+                        onPressed: () async {
+                          final value = await scanProductCode(dialogContext);
+                          if (value != null) barcode.text = value;
+                        },
+                        icon: const Icon(Icons.qr_code_scanner),
+                      ),
                     ],
+                  ),
+                  const SizedBox(height: 12),
+                  InfoBanner(
+                    icon: Icons.payments_outlined,
+                    text: product.defaultCost == null
+                        ? 'Закупочная цена пока не определена. Она заполняется автоматически только после фактической поставки.'
+                        : 'Последняя закупочная цена: ${formatMoney(product.defaultCost, product.costCurrency)}. Вручную она не редактируется и обновляется только поставкой.',
                   ),
                   const SizedBox(height: 18),
                   Row(
@@ -522,8 +530,8 @@ Future<void> showProductControlDialog(BuildContext context, WarehouseController 
                     for (final link in linked)
                       ListTile(
                         contentPadding: EdgeInsets.zero,
-                        title: Text(controller.suppliers.where((s) => s.id == link.supplierId).map((s) => s.name).firstOrNull ?? 'Поставщик'),
-                        subtitle: Text('${link.isPrimary ? 'Основной • ' : ''}${link.supplierSku == null ? '' : 'арт. ${link.supplierSku} • '}${formatMoney(link.lastPrice, link.currency)}'),
+                        title: Text(_supplierName(controller, link.supplierId)),
+                        subtitle: Text('${link.isPrimary ? 'Основной • ' : ''}${link.supplierSku == null ? '' : 'арт. ${link.supplierSku} • '}последняя фактическая цена ${formatMoney(link.lastPrice, link.currency)}'),
                       ),
                 ],
               ),
@@ -542,8 +550,7 @@ Future<void> showProductControlDialog(BuildContext context, WarehouseController 
                       final minValue = int.tryParse(minimum.text);
                       final targetValue = int.tryParse(target.text);
                       final recheckValue = int.tryParse(recheck.text);
-                      final price = cost.text.trim().isEmpty ? null : double.tryParse(cost.text.replaceAll(',', '.'));
-                      if (minValue == null || targetValue == null || recheckValue == null || minValue < 0 || targetValue < 0 || recheckValue < 0 || (cost.text.trim().isNotEmpty && price == null)) {
+                      if (minValue == null || targetValue == null || recheckValue == null || minValue < 0 || targetValue < 0 || recheckValue < 0) {
                         showErrorSnack(dialogContext, 'Проверьте числовые поля');
                         return;
                       }
@@ -556,7 +563,6 @@ Future<void> showProductControlDialog(BuildContext context, WarehouseController 
                           targetAmount: targetValue,
                           varianceRecheckAmount: recheckValue,
                           barcode: barcode.text.trim(),
-                          defaultCost: price,
                         );
                         if (dialogContext.mounted) Navigator.pop(dialogContext);
                       } catch (e) {
@@ -576,7 +582,6 @@ Future<void> showProductControlDialog(BuildContext context, WarehouseController 
   target.dispose();
   recheck.dispose();
   barcode.dispose();
-  cost.dispose();
   employee.dispose();
 }
 
@@ -587,79 +592,66 @@ Future<void> showLinkSupplierDialog(BuildContext context, WarehouseController co
   }
   String supplierId = controller.suppliers.first.id;
   final sku = TextEditingController();
-  final price = TextEditingController();
   var primary = false;
   await showDialog<void>(
     context: context,
     builder: (dialogContext) => StatefulBuilder(
-      builder: (context, setState) => AlertDialog(
-        title: const Text('Привязать поставщика'),
-        content: SizedBox(
-          width: 520,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              DropdownButtonFormField<String>(
-                initialValue: supplierId,
-                decoration: const InputDecoration(labelText: 'Поставщик'),
-                items: controller.suppliers.where((s) => s.active).map((s) => DropdownMenuItem(value: s.id, child: Text(s.name))).toList(growable: false),
-                onChanged: (value) {
-                  if (value != null) setState(() => supplierId = value);
-                },
-              ),
-              const SizedBox(height: 12),
-              TextField(controller: sku, decoration: const InputDecoration(labelText: 'Артикул у поставщика')),
-              const SizedBox(height: 12),
-              TextField(controller: price, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Последняя цена, BYN')),
-              SwitchListTile(value: primary, onChanged: (value) => setState(() => primary = value), title: const Text('Основной поставщик')),
-            ],
+      builder: (context, setState) {
+        final existing = controller.supplierLink(product, supplierId);
+        return AlertDialog(
+          title: const Text('Привязать поставщика'),
+          content: SizedBox(
+            width: 520,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                DropdownButtonFormField<String>(
+                  initialValue: supplierId,
+                  decoration: const InputDecoration(labelText: 'Поставщик'),
+                  items: controller.suppliers.where((supplier) => supplier.active).map((supplier) => DropdownMenuItem(value: supplier.id, child: Text(supplier.name))).toList(growable: false),
+                  onChanged: (value) {
+                    if (value != null) setState(() => supplierId = value);
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextField(controller: sku, decoration: const InputDecoration(labelText: 'Артикул у поставщика')),
+                const SizedBox(height: 12),
+                InfoBanner(
+                  icon: Icons.payments_outlined,
+                  text: existing?.lastPrice == null
+                      ? 'Цена поставщика появится после фактической поставки.'
+                      : 'Последняя фактическая цена: ${formatMoney(existing!.lastPrice, existing.currency)}. Ручное изменение отключено.',
+                ),
+                SwitchListTile(value: primary, onChanged: (value) => setState(() => primary = value), title: const Text('Основной поставщик')),
+              ],
+            ),
           ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Отмена')),
-          FilledButton(
-            onPressed: () async {
-              try {
-                await controller.linkSupplier(
-                  product: product,
-                  supplierId: supplierId,
-                  supplierSku: sku.text.trim().isEmpty ? null : sku.text.trim(),
-                  lastPrice: price.text.trim().isEmpty ? null : double.tryParse(price.text.replaceAll(',', '.')),
-                  isPrimary: primary,
-                );
-                if (dialogContext.mounted) Navigator.pop(dialogContext);
-              } catch (e) {
-                if (dialogContext.mounted) showErrorSnack(dialogContext, e);
-              }
-            },
-            child: const Text('Сохранить'),
-          ),
-        ],
-      ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Отмена')),
+            FilledButton(
+              onPressed: () async {
+                try {
+                  await controller.linkSupplier(
+                    product: product,
+                    supplierId: supplierId,
+                    supplierSku: sku.text.trim().isEmpty ? null : sku.text.trim(),
+                    lastPrice: existing?.lastPrice,
+                    currency: existing?.currency ?? product.costCurrency,
+                    isPrimary: primary,
+                  );
+                  if (dialogContext.mounted) Navigator.pop(dialogContext);
+                } catch (e) {
+                  if (dialogContext.mounted) showErrorSnack(dialogContext, e);
+                }
+              },
+              child: const Text('Сохранить'),
+            ),
+          ],
+        );
+      },
     ),
   );
   sku.dispose();
-  price.dispose();
-}
-
-Future<String?> _scanBarcode(BuildContext context) async {
-  String? result;
-  await Navigator.of(context).push(MaterialPageRoute<void>(
-    fullscreenDialog: true,
-    builder: (pageContext) => Scaffold(
-      appBar: AppBar(title: const Text('Сканировать штрихкод'), leading: IconButton(onPressed: () => Navigator.pop(pageContext), icon: const Icon(Icons.close))),
-      body: MobileScanner(
-        onDetect: (capture) {
-          if (result != null || capture.barcodes.isEmpty) return;
-          final value = capture.barcodes.first.rawValue;
-          if (value == null || value.isEmpty) return;
-          result = value;
-          Navigator.pop(pageContext);
-        },
-      ),
-    ),
-  ));
-  return result;
 }
 
 Future<_WriteOffResult?> showWriteOffDialog(BuildContext context, WarehouseController controller) async {
@@ -682,32 +674,65 @@ Future<_WriteOffResult?> showWriteOffDialog(BuildContext context, WarehouseContr
               children: [
                 TextField(controller: employee, decoration: const InputDecoration(labelText: 'Сотрудник, ФИО *')),
                 const SizedBox(height: 10),
-                DropdownButtonFormField<String>(initialValue: reason, decoration: const InputDecoration(labelText: 'Причина *'), items: reasons.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(), onChanged: (value) { if (value != null) setState(() => reason = value); }),
+                DropdownButtonFormField<String>(
+                  initialValue: reason,
+                  decoration: const InputDecoration(labelText: 'Причина *'),
+                  items: reasons.map((item) => DropdownMenuItem(value: item, child: Text(item))).toList(growable: false),
+                  onChanged: (value) {
+                    if (value != null) setState(() => reason = value);
+                  },
+                ),
                 const SizedBox(height: 10),
                 if (controller.locations.isNotEmpty)
-                  DropdownButtonFormField<String>(initialValue: locationId, decoration: const InputDecoration(labelText: 'Откуда списать'), items: controller.locations.where((l) => l.active).map((l) => DropdownMenuItem(value: l.id, child: Text(l.name))).toList(), onChanged: (value) => setState(() => locationId = value)),
+                  DropdownButtonFormField<String>(
+                    initialValue: locationId,
+                    decoration: const InputDecoration(labelText: 'Откуда списать'),
+                    items: controller.locations.where((location) => location.active).map((location) => DropdownMenuItem(value: location.id, child: Text(location.name))).toList(growable: false),
+                    onChanged: (value) => setState(() => locationId = value),
+                  ),
                 if (controller.locations.isNotEmpty) const SizedBox(height: 10),
                 TextField(controller: comment, decoration: const InputDecoration(labelText: 'Комментарий')),
                 const SizedBox(height: 16),
-                Align(alignment: Alignment.centerRight, child: FilledButton.tonalIcon(onPressed: () async {
-                  final line = await _quantityLineDialog(dialogContext, controller.products, title: 'Что списать');
-                  if (line != null) setState(() => lines[line.product.id] = line);
-                }, icon: const Icon(Icons.add), label: const Text('Добавить позицию'))),
-                for (final line in lines.values) ListTile(title: Text(line.product.name), subtitle: Text(formatStockParts(line.addedMl, line.product.packageSize, line.product.stockUnit)), trailing: IconButton(onPressed: () => setState(() => lines.remove(line.product.id)), icon: const Icon(Icons.delete_outline))),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: FilledButton.tonalIcon(
+                    onPressed: () async {
+                      final line = await _quantityLineDialog(dialogContext, controller.products, title: 'Что списать');
+                      if (line != null) setState(() => lines[line.product.id] = line);
+                    },
+                    icon: const Icon(Icons.add),
+                    label: const Text('Добавить позицию'),
+                  ),
+                ),
+                for (final line in lines.values)
+                  ListTile(
+                    title: Text(line.product.name),
+                    subtitle: Text(formatStockParts(line.addedMl, line.product.packageSize, line.product.stockUnit)),
+                    trailing: IconButton(onPressed: () => setState(() => lines.remove(line.product.id)), icon: const Icon(Icons.delete_outline)),
+                  ),
               ],
             ),
           ),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Отмена')),
-          FilledButton(onPressed: () {
-            if (employee.text.trim().isEmpty || lines.isEmpty || locationId == null) { showErrorSnack(dialogContext, 'Заполните ФИО и добавьте позиции'); return; }
-            Navigator.pop(dialogContext, _WriteOffResult(employee.text.trim(), reason, lines.values.toList(growable: false), locationId!, comment.text.trim().isEmpty ? null : comment.text.trim()));
-          }, child: const Text('Провести списание')),
+          FilledButton(
+            onPressed: () {
+              if (employee.text.trim().isEmpty || lines.isEmpty || locationId == null) {
+                showErrorSnack(dialogContext, 'Заполните ФИО и добавьте позиции');
+                return;
+              }
+              Navigator.pop(dialogContext, _WriteOffResult(employee.text.trim(), reason, lines.values.toList(growable: false), locationId!, _nullable(comment.text)));
+            },
+            child: const Text('Провести списание'),
+          ),
         ],
       ),
     ),
-  ).whenComplete(() { employee.dispose(); comment.dispose(); });
+  ).whenComplete(() {
+    employee.dispose();
+    comment.dispose();
+  });
 }
 
 Future<_TransferResult?> showTransferDialog(BuildContext context, WarehouseController controller) async {
@@ -715,7 +740,7 @@ Future<_TransferResult?> showTransferDialog(BuildContext context, WarehouseContr
   final employee = TextEditingController();
   final comment = TextEditingController();
   var source = controller.primaryLocation?.id ?? controller.locations.first.id;
-  var target = controller.locations.firstWhere((l) => l.id != source).id;
+  var target = controller.locations.firstWhere((location) => location.id != source).id;
   final lines = <int, DeliveryDraftLine>{};
   return showDialog<_TransferResult>(
     context: context,
@@ -731,31 +756,70 @@ Future<_TransferResult?> showTransferDialog(BuildContext context, WarehouseContr
                 TextField(controller: employee, decoration: const InputDecoration(labelText: 'Сотрудник, ФИО *')),
                 const SizedBox(height: 10),
                 TwoFields(
-                  first: DropdownButtonFormField<String>(initialValue: source, decoration: const InputDecoration(labelText: 'Откуда'), items: controller.locations.where((l) => l.active).map((l) => DropdownMenuItem(value: l.id, child: Text(l.name))).toList(), onChanged: (value) { if (value != null) setState(() { source = value; if (target == source) target = controller.locations.firstWhere((l) => l.id != source).id; }); }),
-                  second: DropdownButtonFormField<String>(initialValue: target, decoration: const InputDecoration(labelText: 'Куда'), items: controller.locations.where((l) => l.active && l.id != source).map((l) => DropdownMenuItem(value: l.id, child: Text(l.name))).toList(), onChanged: (value) { if (value != null) setState(() => target = value); }),
+                  first: DropdownButtonFormField<String>(
+                    initialValue: source,
+                    decoration: const InputDecoration(labelText: 'Откуда'),
+                    items: controller.locations.where((location) => location.active).map((location) => DropdownMenuItem(value: location.id, child: Text(location.name))).toList(growable: false),
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() {
+                        source = value;
+                        if (target == source) target = controller.locations.firstWhere((location) => location.id != source).id;
+                      });
+                    },
+                  ),
+                  second: DropdownButtonFormField<String>(
+                    initialValue: target,
+                    decoration: const InputDecoration(labelText: 'Куда'),
+                    items: controller.locations.where((location) => location.active && location.id != source).map((location) => DropdownMenuItem(value: location.id, child: Text(location.name))).toList(growable: false),
+                    onChanged: (value) {
+                      if (value != null) setState(() => target = value);
+                    },
+                  ),
                 ),
                 const SizedBox(height: 10),
                 TextField(controller: comment, decoration: const InputDecoration(labelText: 'Комментарий')),
                 const SizedBox(height: 16),
-                Align(alignment: Alignment.centerRight, child: FilledButton.tonalIcon(onPressed: () async {
-                  final line = await _quantityLineDialog(dialogContext, controller.products, title: 'Что переместить');
-                  if (line != null) setState(() => lines[line.product.id] = line);
-                }, icon: const Icon(Icons.add), label: const Text('Добавить позицию'))),
-                for (final line in lines.values) ListTile(title: Text(line.product.name), subtitle: Text(formatStockParts(line.addedMl, line.product.packageSize, line.product.stockUnit)), trailing: IconButton(onPressed: () => setState(() => lines.remove(line.product.id)), icon: const Icon(Icons.delete_outline))),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: FilledButton.tonalIcon(
+                    onPressed: () async {
+                      final line = await _quantityLineDialog(dialogContext, controller.products, title: 'Что переместить');
+                      if (line != null) setState(() => lines[line.product.id] = line);
+                    },
+                    icon: const Icon(Icons.add),
+                    label: const Text('Добавить позицию'),
+                  ),
+                ),
+                for (final line in lines.values)
+                  ListTile(
+                    title: Text(line.product.name),
+                    subtitle: Text(formatStockParts(line.addedMl, line.product.packageSize, line.product.stockUnit)),
+                    trailing: IconButton(onPressed: () => setState(() => lines.remove(line.product.id)), icon: const Icon(Icons.delete_outline)),
+                  ),
               ],
             ),
           ),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Отмена')),
-          FilledButton(onPressed: () {
-            if (employee.text.trim().isEmpty || lines.isEmpty || source == target) { showErrorSnack(dialogContext, 'Проверьте ФИО, склады и позиции'); return; }
-            Navigator.pop(dialogContext, _TransferResult(employee.text.trim(), source, target, lines.values.toList(growable: false), comment.text.trim().isEmpty ? null : comment.text.trim()));
-          }, child: const Text('Переместить')),
+          FilledButton(
+            onPressed: () {
+              if (employee.text.trim().isEmpty || lines.isEmpty || source == target) {
+                showErrorSnack(dialogContext, 'Проверьте ФИО, склады и позиции');
+                return;
+              }
+              Navigator.pop(dialogContext, _TransferResult(employee.text.trim(), source, target, lines.values.toList(growable: false), _nullable(comment.text)));
+            },
+            child: const Text('Переместить'),
+          ),
         ],
       ),
     ),
-  ).whenComplete(() { employee.dispose(); comment.dispose(); });
+  ).whenComplete(() {
+    employee.dispose();
+    comment.dispose();
+  });
 }
 
 Future<DeliveryDraftLine?> _quantityLineDialog(BuildContext context, List<Product> products, {required String title}) async {
@@ -767,7 +831,7 @@ Future<DeliveryDraftLine?> _quantityLineDialog(BuildContext context, List<Produc
     context: context,
     builder: (dialogContext) => StatefulBuilder(
       builder: (context, setState) {
-        final product = products.firstWhere((p) => p.id == productId);
+        final product = products.firstWhere((item) => item.id == productId);
         return AlertDialog(
           title: Text(title),
           content: SizedBox(
@@ -775,23 +839,45 @@ Future<DeliveryDraftLine?> _quantityLineDialog(BuildContext context, List<Produc
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                DropdownButtonFormField<int>(initialValue: productId, isExpanded: true, decoration: const InputDecoration(labelText: 'Позиция'), items: products.map((p) => DropdownMenuItem(value: p.id, child: Text('${p.categoryName} — ${p.name}'))).toList(), onChanged: (value) { if (value != null) setState(() { productId = value; whole.text = '0'; extra.text = '0'; }); }),
+                DropdownButtonFormField<int>(
+                  initialValue: productId,
+                  isExpanded: true,
+                  decoration: const InputDecoration(labelText: 'Позиция'),
+                  items: products.map((item) => DropdownMenuItem(value: item.id, child: Text('${item.categoryName} — ${item.name}'))).toList(growable: false),
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() {
+                      productId = value;
+                      whole.text = '0';
+                      extra.text = '0';
+                    });
+                  },
+                ),
                 const SizedBox(height: 12),
                 if (product.stockUnit == StockUnit.piece)
                   IntegerField(controller: whole, label: 'Количество, шт.', min: 0)
                 else
-                  TwoFields(first: IntegerField(controller: whole, label: product.stockUnit == StockUnit.ml ? 'Бутылок' : 'Упаковок', min: 0), second: IntegerField(controller: extra, label: 'Доп. ${product.stockUnit.symbol}', min: 0)),
+                  TwoFields(
+                    first: IntegerField(controller: whole, label: product.stockUnit == StockUnit.ml ? 'Бутылок' : 'Упаковок', min: 0),
+                    second: IntegerField(controller: extra, label: 'Доп. ${product.stockUnit.symbol}', min: 0),
+                  ),
               ],
             ),
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Отмена')),
-            FilledButton(onPressed: () {
-              final w = int.tryParse(whole.text) ?? -1;
-              final e = product.stockUnit == StockUnit.piece ? 0 : (int.tryParse(extra.text) ?? -1);
-              if (w < 0 || e < 0 || (product.stockUnit != StockUnit.piece && e >= product.packageSize) || (w == 0 && e == 0)) { showErrorSnack(dialogContext, 'Некорректное количество'); return; }
-              Navigator.pop(dialogContext, DeliveryDraftLine(product: product, bottles: w, extraMl: e));
-            }, child: const Text('Добавить')),
+            FilledButton(
+              onPressed: () {
+                final wholeValue = int.tryParse(whole.text) ?? -1;
+                final extraValue = product.stockUnit == StockUnit.piece ? 0 : (int.tryParse(extra.text) ?? -1);
+                if (wholeValue < 0 || extraValue < 0 || (product.stockUnit != StockUnit.piece && extraValue >= product.packageSize) || (wholeValue == 0 && extraValue == 0)) {
+                  showErrorSnack(dialogContext, 'Некорректное количество');
+                  return;
+                }
+                Navigator.pop(dialogContext, DeliveryDraftLine(product: product, bottles: wholeValue, extraMl: extraValue));
+              },
+              child: const Text('Добавить'),
+            ),
           ],
         );
       },
@@ -805,6 +891,7 @@ Future<DeliveryDraftLine?> _quantityLineDialog(BuildContext context, List<Produc
 IconData _operationIcon(StockOperationType type) => switch (type) {
       StockOperationType.delivery => Icons.local_shipping_outlined,
       StockOperationType.stocktake => Icons.fact_check_outlined,
+      StockOperationType.spotStocktake => Icons.center_focus_strong_outlined,
       StockOperationType.writeoff => Icons.remove_circle_outline,
       StockOperationType.transfer => Icons.swap_horiz,
       StockOperationType.correction => Icons.tune,
@@ -814,6 +901,20 @@ String _operationTotal(StockOperation operation) {
   if (operation.type == StockOperationType.transfer) return '${operation.lines.length} поз.';
   final delta = operation.lines.fold<int>(0, (sum, line) => sum + line.changeTotalMl);
   return '${delta >= 0 ? '+' : '−'}${delta.abs()}';
+}
+
+String _productKey(Product product) => '${product.name.trim().toLowerCase()}|${product.stockUnit.dbValue}|${product.packageSize}';
+
+String _supplierName(WarehouseController controller, String supplierId) {
+  for (final supplier in controller.suppliers) {
+    if (supplier.id == supplierId) return supplier.name;
+  }
+  return 'Поставщик';
+}
+
+String? _nullable(String value) {
+  final text = value.trim();
+  return text.isEmpty ? null : text;
 }
 
 class _WriteOffResult {
@@ -832,11 +933,4 @@ class _TransferResult {
   final String targetId;
   final List<DeliveryDraftLine> lines;
   final String? comment;
-}
-
-extension _FirstOrNullControl<T> on Iterable<T> {
-  T? get firstOrNull {
-    final iterator = this.iterator;
-    return iterator.moveNext() ? iterator.current : null;
-  }
 }
