@@ -26,9 +26,11 @@ class StockPurchaseRequest {
     return 'ЗАК-${date.year}-${date.month.toString().padLeft(2, '0')}${date.day.toString().padLeft(2, '0')}-$tail';
   }
 
-  bool get isOpen => const {'draft', 'confirmed', 'sent', 'partial'}.contains(status);
-  bool get countsAsOrdered => const {'confirmed', 'sent', 'partial'}.contains(status);
-  bool get canReceive => const {'confirmed', 'sent', 'partial'}.contains(status);
+  /// Only a confirmed/sent/partial request is a real outstanding order.
+  /// A draft must not reduce the automatic purchase recommendation.
+  bool get isOpen => const {'confirmed', 'sent', 'partial'}.contains(status);
+  bool get countsAsOrdered => isOpen;
+  bool get canReceive => isOpen;
 
   String get statusLabel => switch (status) {
         'confirmed' => 'Подтверждена',
