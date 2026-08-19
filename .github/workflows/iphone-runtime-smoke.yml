@@ -25,10 +25,12 @@ jobs:
           launcher = Path('ios-web/launch-v15.html').read_text(encoding='utf-8')
           ui = Path('ios-web/v15-ui.js').read_text(encoding='utf-8')
           delivery = Path('ios-web/v15-delivery-link.js').read_text(encoding='utf-8')
+          compat = Path('ios-web/v15-compat.js').read_text(encoding='utf-8')
           required_launcher = [
               'bali-stock-ios-runtime',
               'v15-ui.js',
               'v15-delivery-link.js',
+              'v15-compat.js',
               'async function snapshot',
               'baseSnapshot=snapshot',
           ]
@@ -65,6 +67,16 @@ jobs:
           if missing:
               raise SystemExit(f'V15 delivery-link contract missing: {missing!r}')
 
+          required_compat = [
+              '__BALI_STOCK_V15_COMPAT__',
+              "v14Photo: 'v14pcPhoto'",
+              "v14Edit: 'v14pcEdit'",
+              "v14Spot: 'v14pcStocktake'",
+          ]
+          missing = [item for item in required_compat if item not in compat]
+          if missing:
+              raise SystemExit(f'V15 compatibility bridge missing: {missing!r}')
+
           scripts = re.findall(r'<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)</script>', launcher, flags=re.I)
           if not scripts:
               raise SystemExit('V15 launcher inline JavaScript not found')
@@ -74,6 +86,7 @@ jobs:
           PY
           node --check ios-web/v15-ui.js
           node --check ios-web/v15-delivery-link.js
+          node --check ios-web/v15-compat.js
           for file in /tmp/bali-v15-launcher-*.js; do
             node --check "$file"
           done
