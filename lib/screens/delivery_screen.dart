@@ -615,6 +615,7 @@ Future<DeliveryDraftLine?> showDeliveryLineDialog(
           StockUnit.piece => 'Количество, шт.',
         };
         final extraLabel = product.stockUnit == StockUnit.ml ? 'Доп. объём, мл' : 'Доп. остаток, г';
+        final productLocked = initial != null || preselectedProduct != null;
 
         return AlertDialog(
           title: Row(
@@ -635,20 +636,23 @@ Future<DeliveryDraftLine?> showDeliveryLineDialog(
                     DropdownButtonFormField<int>(
                       initialValue: productId,
                       isExpanded: true,
-                      decoration: const InputDecoration(labelText: 'Позиция'),
+                      decoration: InputDecoration(
+                        labelText: 'Позиция',
+                        helperText: productLocked ? 'Позиция зафиксирована выбранным/отсканированным кодом.' : null,
+                      ),
                       items: products.map((p) => DropdownMenuItem(value: p.id, child: Text('${p.categoryName} — ${p.name} (${_productUnitLabel(p)})'))).toList(growable: false),
-                      onChanged: (value) {
-                        if (value != null) {
-                          setState(() {
-                            productId = value;
-                            if (initial == null) {
-                              whole.text = '0';
-                              extra.text = '0';
-                              cost.text = '';
-                            }
-                          });
-                        }
-                      },
+                      onChanged: productLocked
+                          ? null
+                          : (value) {
+                              if (value != null) {
+                                setState(() {
+                                  productId = value;
+                                  whole.text = '0';
+                                  extra.text = '0';
+                                  cost.text = '';
+                                });
+                              }
+                            },
                     ),
                     const SizedBox(height: 12),
                     if (product.stockUnit == StockUnit.piece)
