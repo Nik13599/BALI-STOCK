@@ -73,6 +73,8 @@ void main() {
     expect(source.contains('Закупочная цена обязательна'), isTrue);
     expect(source.contains('unitCost == null'), isTrue);
     expect(source.contains('ДАННЫЕ ВВЕДЕНЫ'), isTrue);
+    expect(source.contains('final productLocked = initial != null || preselectedProduct != null;'), isTrue);
+    expect(source.contains('Позиция зафиксирована выбранным/отсканированным кодом.'), isTrue);
   });
 
   test('navigation icons are semantic warehouse pictograms', () {
