@@ -1,6 +1,9 @@
 #define MyAppName "BALI STOCK"
 #ifndef MyAppVersion
-  #define MyAppVersion "0.16.0"
+  #define MyAppVersion "1.0.0"
+#endif
+#ifndef MyOutputBaseFilename
+  #define MyOutputBaseFilename "BALI-STOCK-Windows-Setup"
 #endif
 #define MyAppPublisher "BALI"
 #define MyAppExeName "bali_stock.exe"
@@ -14,7 +17,7 @@ DefaultDirName={localappdata}\Programs\BALI STOCK
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=..\..\dist\windows
-OutputBaseFilename=BALI-STOCK-Windows-v16-Setup
+OutputBaseFilename={#MyOutputBaseFilename}
 SetupIconFile=..\..\windows\runner\resources\app_icon.ico
 Compression=lzma2/ultra64
 SolidCompression=yes
