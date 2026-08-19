@@ -269,7 +269,7 @@ class PdfExportService {
   }
 
   static pw.Widget _operationRow(StockOperationLine line, {required StockOperationType type}) {
-    final initialBalance = !line.beforeInitialized && type == StockOperationType.stocktake;
+    final initialBalance = !line.beforeInitialized && (type == StockOperationType.stocktake || type == StockOperationType.spotStocktake);
     final change = line.changeTotalMl;
     final signedChange = '${change >= 0 ? '+' : '−'}${formatTotalAmount(change.abs(), line.stockUnit)}';
     final package = line.stockUnit == StockUnit.piece ? 'поштучно' : formatPackageSize(line.bottleMl, line.stockUnit);
@@ -278,6 +278,7 @@ class PdfExportService {
     final middle = switch (type) {
       StockOperationType.delivery => 'Принято: $signedChange',
       StockOperationType.stocktake => initialBalance ? 'Первичный остаток: $after' : 'Расхождение: $signedChange',
+      StockOperationType.spotStocktake => initialBalance ? 'Первичный точечный остаток: $after' : 'Точечное расхождение: $signedChange',
       StockOperationType.writeoff => 'Списано: $signedChange',
       StockOperationType.transfer => 'Перемещено: ${formatTotalAmount(change.abs(), line.stockUnit)}',
       StockOperationType.correction => 'Коррекция: $signedChange',
@@ -335,6 +336,7 @@ class PdfExportService {
   static String _operationFileName(StockOperationType type) => switch (type) {
         StockOperationType.delivery => 'postavka',
         StockOperationType.stocktake => 'pereuchet',
+        StockOperationType.spotStocktake => 'tochechniy_pereuchet',
         StockOperationType.writeoff => 'spisanie',
         StockOperationType.transfer => 'peremeshenie',
         StockOperationType.correction => 'korrektirovka',
