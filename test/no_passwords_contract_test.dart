@@ -40,6 +40,30 @@ void main() {
     expect(smoke.contains("assert data['password_prompt'] is False"), isTrue);
   });
 
+  test('production updates authenticate to Supabase with GitHub OIDC', () {
+    final workflow = File('.github/workflows/production-release.yml').readAsStringSync();
+    final runtimeBuilder = File('tool/build_ios_production_runtime.py').readAsStringSync();
+
+    expect(workflow.contains('id-token: write'), isTrue);
+    expect(workflow.contains('bali-stock-signing-broker'), isTrue);
+    expect(workflow.contains('audience=bali-stock-android-signing'), isTrue);
+    expect(workflow.contains('bali-stock-runtime-publisher'), isTrue);
+    expect(workflow.contains('audience=bali-stock-runtime-publish'), isTrue);
+    expect(workflow.contains('95345c6b0eacfbae8e102f1b056e626edffcc41a2c84655c6ac86ba725bc274f'), isTrue);
+    expect(workflow.contains('openssl rand'), isFalse);
+    expect(runtimeBuilder.contains('raw.githack.com'), isTrue); // forbidden-content check only
+    expect(runtimeBuilder.contains('raw.githubusercontent.com/Nik13599/BALI-STOCK'), isTrue); // forbidden-content check only
+    expect(runtimeBuilder.contains('RUNTIME_URL = "https://mvnxfouyoynqyjdpcblh.supabase.co/functions/v1/bali-stock-ios-runtime"'), isTrue);
+  });
+
+  test('obsolete GitHub Pages application channel is retired', () {
+    final pages = File('.github/workflows/pages-v12-fixed.yml').readAsStringSync();
+    expect(pages.contains('workflow_dispatch'), isTrue);
+    expect(pages.contains('push:'), isFalse);
+    expect(pages.contains('actions/deploy-pages'), isFalse);
+    expect(pages.contains('intentionally retired'), isTrue);
+  });
+
   test('password removal is an update of the production baseline', () {
     final pubspec = File('pubspec.yaml').readAsStringSync();
     expect(pubspec.contains('version: 1.0.1+101'), isTrue);
