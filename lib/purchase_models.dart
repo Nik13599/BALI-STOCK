@@ -27,6 +27,7 @@ class StockPurchaseRequest {
   }
 
   bool get isOpen => const {'draft', 'confirmed', 'sent', 'partial'}.contains(status);
+  bool get countsAsOrdered => const {'confirmed', 'sent', 'partial'}.contains(status);
   bool get canReceive => const {'confirmed', 'sent', 'partial'}.contains(status);
 
   String get statusLabel => switch (status) {
