@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 concurrency:
   group: bali-stock-production-release
@@ -34,24 +35,17 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           import re
-          text = Path("pubspec.yaml").read_text(encoding="utf-8")
-          m = re.search(r"^version:\s*([0-9]+\.[0-9]+\.[0-9]+)\+([0-9]+)\s*$", text, re.M)
-          if not m:
-              raise SystemExit("pubspec version must be semantic version + integer build number")
-          print("production version:", m.group(1), "build:", m.group(2))
+          text = Path('pubspec.yaml').read_text(encoding='utf-8')
+          match = re.search(r'^version:\s*([0-9]+\.[0-9]+\.[0-9]+)\+([0-9]+)\s*$', text, re.M)
+          if not match:
+              raise SystemExit('pubspec version must be semantic version + integer build number')
+          print('production version:', match.group(1), 'build:', match.group(2))
           PY
 
   android:
     name: production-android
     needs: quality
     runs-on: ubuntu-latest
-    env:
-      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-      ANDROID_STORE_PASSWORD_SECRET: ${{ secrets.ANDROID_STORE_PASSWORD }}
-      ANDROID_KEY_ALIAS_SECRET: ${{ secrets.ANDROID_KEY_ALIAS }}
-      ANDROID_KEY_PASSWORD_SECRET: ${{ secrets.ANDROID_KEY_PASSWORD }}
-      SUPABASE_URL: https://mvnxfouyoynqyjdpcblh.supabase.co
-      SUPABASE_PUBLISHABLE_KEY: sb_publishable_Tq2niBP0_2KuzTEuip8Oeg_1HhCUo29
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
@@ -63,113 +57,83 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-          p = Path('android/app/src/main/AndroidManifest.xml')
-          text = p.read_text(encoding='utf-8')
+          path = Path('android/app/src/main/AndroidManifest.xml')
+          text = path.read_text(encoding='utf-8')
           marker = '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
           permissions = [
               '<uses-permission android:name="android.permission.INTERNET" />',
               '<uses-permission android:name="android.permission.CAMERA" />',
           ]
-          additions = [f"    {x}" for x in permissions if x not in text]
+          additions = [f'    {permission}' for permission in permissions if permission not in text]
           if additions:
-              text = text.replace(marker, marker + "\n" + "\n".join(additions))
-              p.write_text(text, encoding='utf-8')
+              text = text.replace(marker, marker + '\n' + '\n'.join(additions))
+              path.write_text(text, encoding='utf-8')
           PY
       - run: flutter pub get
       - run: dart run flutter_launcher_icons
-      - name: Prepare stable Android production signing
+      - name: Fetch stable Android signing identity with GitHub OIDC
+        env:
+          SIGNING_BROKER: https://mvnxfouyoynqyjdpcblh.supabase.co/functions/v1/bali-stock-signing-broker
+        run: |
+          python - <<'PY'
+          import base64
+          import json
+          import os
+          import pathlib
+          import urllib.request
+
+          oidc_url = os.environ['ACTIONS_ID_TOKEN_REQUEST_URL'] + '&audience=bali-stock-android-signing'
+          oidc_request = urllib.request.Request(
+              oidc_url,
+              headers={'Authorization': 'bearer ' + os.environ['ACTIONS_ID_TOKEN_REQUEST_TOKEN']},
+          )
+          with urllib.request.urlopen(oidc_request, timeout=20) as response:
+              token = json.loads(response.read().decode('utf-8'))['value']
+
+          request = urllib.request.Request(
+              os.environ['SIGNING_BROKER'],
+              data=json.dumps({'token': token}).encode('utf-8'),
+              method='POST',
+              headers={'Content-Type': 'application/json'},
+          )
+          with urllib.request.urlopen(request, timeout=30) as response:
+              signing = json.loads(response.read().decode('utf-8'))
+
+          expected = '95345c6b0eacfbae8e102f1b056e626edffcc41a2c84655c6ac86ba725bc274f'
+          if signing.get('cert_sha256') != expected:
+              raise SystemExit('Android production signing certificate mismatch')
+
+          key_path = pathlib.Path(os.environ['RUNNER_TEMP']) / 'bali-stock-production.jks'
+          key_path.write_bytes(base64.b64decode(signing['keystore_base64']))
+          values = {
+              'ANDROID_KEYSTORE_PATH': str(key_path),
+              'ANDROID_STORE_PASSWORD': signing['store_password'],
+              'ANDROID_KEY_PASSWORD': signing['key_password'],
+              'ANDROID_KEY_ALIAS': signing['key_alias'],
+          }
+          for value in values.values():
+              print(f'::add-mask::{value}')
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as env:
+              for key, value in values.items():
+                  env.write(f'{key}={value}\n')
+          print('Stable Android production signing identity received via GitHub OIDC.')
+          PY
+      - name: Verify signing keystore identity before build
         shell: bash
         run: |
           set -euo pipefail
-          VERSION="$(sed -n 's/^version:[[:space:]]*\([0-9.]*\)+.*/\1/p' pubspec.yaml)"
-          KEYSTORE="$RUNNER_TEMP/bali-stock-production.jks"
-          ALIAS="${ANDROID_KEY_ALIAS_SECRET:-bali_stock_prod}"
-          BOOTSTRAP=false
-
-          if [ -n "${ANDROID_KEYSTORE_BASE64:-}" ] && [ -n "${ANDROID_STORE_PASSWORD_SECRET:-}" ] && [ -n "${ANDROID_KEY_PASSWORD_SECRET:-}" ] && [ -n "${ANDROID_KEY_ALIAS_SECRET:-}" ]; then
-            printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
-            STORE_PASS="$ANDROID_STORE_PASSWORD_SECRET"
-            KEY_PASS="$ANDROID_KEY_PASSWORD_SECRET"
-          else
-            if [ "$VERSION" != "1.0.0" ]; then
-              echo "Production Android signing secrets are required after the initial 1.0.0 release." >&2
-              exit 1
-            fi
-            BOOTSTRAP=true
-            STORE_PASS="$(openssl rand -hex 32)"
-            KEY_PASS="$(openssl rand -hex 32)"
-            ARCHIVE_PASS="$(openssl rand -hex 48)"
-            ALIAS="bali_stock_prod"
-
-            echo "::add-mask::$STORE_PASS"
-            echo "::add-mask::$KEY_PASS"
-            echo "::add-mask::$ARCHIVE_PASS"
-
-            keytool -genkeypair -v \
-              -keystore "$KEYSTORE" \
-              -storetype JKS \
-              -storepass "$STORE_PASS" \
-              -keypass "$KEY_PASS" \
-              -alias "$ALIAS" \
-              -keyalg RSA \
-              -keysize 4096 \
-              -validity 10000 \
-              -dname "CN=BALI STOCK Production,O=BALI,C=BY"
-
-            CERT_SHA256="$(keytool -exportcert -alias "$ALIAS" -keystore "$KEYSTORE" -storepass "$STORE_PASS" 2>/dev/null | sha256sum | awk '{print $1}')"
-            echo "Production Android signing certificate SHA-256: $CERT_SHA256"
-
-            mkdir -p dist/signing
-            ARCHIVE_PASSWORD="$ARCHIVE_PASS" openssl enc -aes-256-cbc -salt -pbkdf2 -iter 250000 \
-              -in "$KEYSTORE" \
-              -out dist/signing/BALI-STOCK-Android-Production-Key.jks.enc \
-              -pass env:ARCHIVE_PASSWORD
-
-            RELEASE_TAG="v$VERSION" STORE_PASSWORD="$STORE_PASS" KEY_PASSWORD="$KEY_PASS" KEY_ALIAS="$ALIAS" ARCHIVE_PASSWORD="$ARCHIVE_PASS" CERT_SHA256="$CERT_SHA256" \
-            python - <<'PY'
-          import json
-          import os
-          import urllib.request
-
-          endpoint = os.environ["SUPABASE_URL"] + "/rest/v1/stock_release_signing_bootstrap"
-          body = json.dumps({
-              "release_tag": os.environ["RELEASE_TAG"],
-              "archive_password": os.environ["ARCHIVE_PASSWORD"],
-              "store_password": os.environ["STORE_PASSWORD"],
-              "key_password": os.environ["KEY_PASSWORD"],
-              "key_alias": os.environ["KEY_ALIAS"],
-              "cert_sha256": os.environ["CERT_SHA256"],
-          }).encode("utf-8")
-          req = urllib.request.Request(
-              endpoint,
-              data=body,
-              method="POST",
-              headers={
-                  "apikey": os.environ["SUPABASE_PUBLISHABLE_KEY"],
-                  "Authorization": "Bearer " + os.environ["SUPABASE_PUBLISHABLE_KEY"],
-                  "Content-Type": "application/json",
-                  "Prefer": "return=minimal",
-              },
-          )
-          with urllib.request.urlopen(req, timeout=20) as response:
-              if response.status not in (200, 201, 204):
-                  raise RuntimeError(f"bootstrap secret escrow failed: HTTP {response.status}")
-          PY
-          fi
-
-          echo "ANDROID_KEYSTORE_PATH=$KEYSTORE" >> "$GITHUB_ENV"
-          echo "ANDROID_STORE_PASSWORD=$STORE_PASS" >> "$GITHUB_ENV"
-          echo "ANDROID_KEY_PASSWORD=$KEY_PASS" >> "$GITHUB_ENV"
-          echo "ANDROID_KEY_ALIAS=$ALIAS" >> "$GITHUB_ENV"
-          echo "ANDROID_SIGNING_BOOTSTRAP=$BOOTSTRAP" >> "$GITHUB_ENV"
+          actual="$(keytool -exportcert -alias "$ANDROID_KEY_ALIAS" -keystore "$ANDROID_KEYSTORE_PATH" -storepass "$ANDROID_STORE_PASSWORD" 2>/dev/null | sha256sum | awk '{print $1}')"
+          expected="95345c6b0eacfbae8e102f1b056e626edffcc41a2c84655c6ac86ba725bc274f"
+          test "$actual" = "$expected"
+          echo "Android production certificate verified: $actual"
       - name: Configure Gradle release signing
         run: |
           python - <<'PY'
           from pathlib import Path
-          p = Path("android/app/build.gradle.kts")
-          text = p.read_text(encoding="utf-8")
+          path = Path('android/app/build.gradle.kts')
+          text = path.read_text(encoding='utf-8')
           if 'create("release")' not in text:
-              marker = "    buildTypes {"
+              marker = '    buildTypes {'
               block = '''    signingConfigs {
                   create("release") {
                       storeFile = file(System.getenv("ANDROID_KEYSTORE_PATH"))
@@ -181,38 +145,29 @@ jobs:
 
           '''
               if marker not in text:
-                  raise SystemExit("Android buildTypes marker not found")
+                  raise SystemExit('Android buildTypes marker not found')
               text = text.replace(marker, block + marker, 1)
           text = text.replace('signingConfig = signingConfigs.getByName("debug")', 'signingConfig = signingConfigs.getByName("release")')
-          p.write_text(text, encoding="utf-8")
+          path.write_text(text, encoding='utf-8')
           PY
       - run: flutter build apk --release
-      - name: Verify Android production signature
+      - name: Verify Android production APK
         shell: bash
         run: |
           set -euo pipefail
-          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
-          APKSIGNER="$(find "$SDK/build-tools" -type f -name apksigner 2>/dev/null | sort -V | tail -1)"
-          if [ -z "$APKSIGNER" ]; then
-            echo "apksigner not found" >&2
-            exit 1
-          fi
-          "$APKSIGNER" verify --verbose --print-certs build/app/outputs/flutter-apk/app-release.apk
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          apksigner="$(find "$sdk/build-tools" -type f -name apksigner 2>/dev/null | sort -V | tail -1)"
+          test -n "$apksigner"
+          "$apksigner" verify --verbose --print-certs build/app/outputs/flutter-apk/app-release.apk
           mkdir -p dist/android
           cp build/app/outputs/flutter-apk/app-release.apk dist/android/BALI-STOCK-Android.apk
-          "$APKSIGNER" verify --print-certs dist/android/BALI-STOCK-Android.apk > dist/android/BALI-STOCK-Android-Signing.txt
+          "$apksigner" verify --print-certs dist/android/BALI-STOCK-Android.apk > dist/android/BALI-STOCK-Android-Signing.txt
+          grep -qi '95345c6b0eacfbae8e102f1b056e626edffcc41a2c84655c6ac86ba725bc274f' <(tr -d ':' < dist/android/BALI-STOCK-Android-Signing.txt)
       - uses: actions/upload-artifact@v4
         with:
           name: production-android
           path: dist/android/*
           if-no-files-found: error
-      - uses: actions/upload-artifact@v4
-        if: env.ANDROID_SIGNING_BOOTSTRAP == 'true'
-        with:
-          name: production-android-signing-backup-encrypted
-          path: dist/signing/BALI-STOCK-Android-Production-Key.jks.enc
-          if-no-files-found: error
-          retention-days: 1
 
   windows:
     name: production-windows
@@ -252,24 +207,100 @@ jobs:
     name: production-iphone-webclip
     needs: quality
     runs-on: ubuntu-latest
+    env:
+      RUNTIME_PUBLISHER: https://mvnxfouyoynqyjdpcblh.supabase.co/functions/v1/bali-stock-runtime-publisher
+      RUNTIME_URL: https://mvnxfouyoynqyjdpcblh.supabase.co/functions/v1/bali-stock-ios-runtime
     steps:
       - uses: actions/checkout@v4
-      - run: python tool/generate_mobileconfig.py
-      - name: Validate production iPhone profile
+      - name: Generate iPhone profile
+        run: python tool/generate_mobileconfig.py
+      - name: Build self-contained iPhone production runtime
+        run: python tool/build_ios_production_runtime.py
+      - name: Validate iPhone profile and runtime before publication
         run: |
           python - <<'PY'
           import plistlib
+          import re
           from pathlib import Path
-          p = Path("dist/ios/BALI-STOCK-iPhone.mobileconfig")
-          with p.open("rb") as f:
+
+          expected = 'https://mvnxfouyoynqyjdpcblh.supabase.co/functions/v1/bali-stock-ios-runtime'
+          with Path('dist/ios/BALI-STOCK-iPhone.mobileconfig').open('rb') as f:
               profile = plistlib.load(f)
-          clip = profile["PayloadContent"][0]
-          assert clip["PayloadType"] == "com.apple.webClip.managed"
-          expected = "https://mvnxfouyoynqyjdpcblh.supabase.co/functions/v1/bali-stock-ios-runtime"
-          assert clip["URL"] == expected, clip["URL"]
-          assert "github" not in clip["URL"].lower()
-          assert clip["Icon"]
-          print("production iPhone profile:", clip["URL"])
+          clip = profile['PayloadContent'][0]
+          assert clip['PayloadType'] == 'com.apple.webClip.managed'
+          assert clip['URL'] == expected
+          assert 'github' not in clip['URL'].lower()
+          assert clip['Icon']
+
+          html = Path('dist/ios-runtime/bali-stock.html').read_text(encoding='utf-8')
+          forbidden = ['raw.githack.com', 'raw.githubusercontent.com/Nik13599/BALI-STOCK', 'Введите пароль доступа', 'Пароль не введён', 'Неверный пароль', 'x-bali-stock-pin']
+          assert not [value for value in forbidden if value in html]
+          scripts = re.findall(r'<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)</script>', html, flags=re.I)
+          for index, script in enumerate(scripts):
+              Path(f'/tmp/bali-release-inline-{index}.js').write_text(script, encoding='utf-8')
+          print('iPhone production runtime validated; inline scripts:', len(scripts))
+          PY
+          for file in /tmp/bali-release-inline-*.js; do node --check "$file"; done
+      - name: Publish iPhone runtime to Supabase using GitHub OIDC
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import re
+          import urllib.request
+          from pathlib import Path
+
+          version_text = Path('pubspec.yaml').read_text(encoding='utf-8')
+          match = re.search(r'^version:\s*(\d+\.\d+\.\d+)\+(\d+)\s*$', version_text, re.M)
+          if not match:
+              raise SystemExit('Invalid pubspec version')
+          version, build = match.group(1), int(match.group(2))
+
+          oidc_url = os.environ['ACTIONS_ID_TOKEN_REQUEST_URL'] + '&audience=bali-stock-runtime-publish'
+          oidc_request = urllib.request.Request(
+              oidc_url,
+              headers={'Authorization': 'bearer ' + os.environ['ACTIONS_ID_TOKEN_REQUEST_TOKEN']},
+          )
+          with urllib.request.urlopen(oidc_request, timeout=20) as response:
+              token = json.loads(response.read().decode('utf-8'))['value']
+
+          payload = {
+              'token': token,
+              'html': Path('dist/ios-runtime/bali-stock.html').read_text(encoding='utf-8'),
+              'version': version,
+              'build': build,
+          }
+          request = urllib.request.Request(
+              os.environ['RUNTIME_PUBLISHER'],
+              data=json.dumps(payload).encode('utf-8'),
+              method='POST',
+              headers={'Content-Type': 'application/json'},
+          )
+          with urllib.request.urlopen(request, timeout=60) as response:
+              result = json.loads(response.read().decode('utf-8'))
+          if not result.get('ok') or result.get('version') != version or int(result.get('build', 0)) != build:
+              raise SystemExit(f'Runtime publication failed: {result}')
+          print('iPhone runtime published:', version, build, result.get('sha256'))
+          PY
+      - name: Verify published iPhone runtime
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import re
+          import urllib.request
+          from pathlib import Path
+
+          match = re.search(r'^version:\s*(\d+\.\d+\.\d+)\+(\d+)\s*$', Path('pubspec.yaml').read_text(encoding='utf-8'), re.M)
+          expected_version, expected_build = match.group(1), int(match.group(2))
+          with urllib.request.urlopen(os.environ['RUNTIME_URL'] + '?health=1&release=1', timeout=30) as response:
+              health = json.loads(response.read().decode('utf-8'))
+          assert health['ok'] is True, health
+          assert health['version'] == expected_version, health
+          assert int(health['build']) == expected_build, health
+          assert health['github_dependency'] is False, health
+          assert health['password_prompt'] is False, health
+          print('Published iPhone runtime health OK:', health)
           PY
       - uses: actions/upload-artifact@v4
         with:
@@ -295,7 +326,7 @@ jobs:
         with:
           name: production-iphone
           path: release
-      - name: Prepare production branch and checksums
+      - name: Prepare production channel and checksums
         shell: bash
         run: |
           set -euo pipefail
@@ -314,10 +345,10 @@ jobs:
           sha256sum BALI-STOCK-Windows-Setup.exe BALI-STOCK-Android.apk BALI-STOCK-iPhone.mobileconfig > BALI-STOCK-SHA256.txt
           cat > BALI-STOCK-RELEASE.txt <<EOF
           BALI STOCK $VERSION (build $BUILD)
-          Production release channel: production
-          Windows: install BALI-STOCK-Windows-Setup.exe over the previous version.
-          Android: install BALI-STOCK-Android.apk over the previous production-signed version.
-          iPhone: install BALI-STOCK-iPhone.mobileconfig once; later updates are loaded from the stable Supabase runtime and do not depend on GitHub visibility.
+          GitHub source repository may remain private.
+          Windows: install BALI-STOCK-Windows-Setup.exe over the previous production version.
+          Android: install BALI-STOCK-Android.apk over the previous production version; the signing identity is preserved through GitHub OIDC.
+          iPhone: install BALI-STOCK-iPhone.mobileconfig once. Later application updates are published behind the same stable Supabase runtime URL.
           EOF
       - name: Publish or update GitHub release
         env:
@@ -325,7 +356,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ASSETS=(
+          assets=(
             release/BALI-STOCK-Windows-Setup.exe
             release/BALI-STOCK-Android.apk
             release/BALI-STOCK-Android-Signing.txt
@@ -334,12 +365,12 @@ jobs:
             release/BALI-STOCK-RELEASE.txt
           )
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "${ASSETS[@]}" --clobber
+            gh release upload "$TAG" "${assets[@]}" --clobber
             gh release edit "$TAG" --title "BALI STOCK $VERSION" --latest
           else
-            gh release create "$TAG" "${ASSETS[@]}" \
+            gh release create "$TAG" "${assets[@]}" \
               --target "$GITHUB_SHA" \
               --title "BALI STOCK $VERSION" \
-              --notes "Production release BALI STOCK $VERSION (build $BUILD). Windows and Android remain upgrade-compatible. iPhone Web Clip uses the stable Supabase runtime and is independent of repository visibility." \
+              --notes "Production release BALI STOCK $VERSION (build $BUILD). Repository visibility does not affect the working applications. Android signing and iPhone runtime publication use GitHub OIDC with Supabase." \
               --latest
           fi
