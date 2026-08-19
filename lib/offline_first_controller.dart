@@ -40,8 +40,10 @@ class OfflineFirstWarehouseController extends WarehouseController {
   Timer? _offlinePollTimer;
   String? _syncPin;
   bool _syncing = false;
+  bool _polling = false;
   bool _offlineOnline = false;
   int _pendingSyncCount = 0;
+  int? _lastSeenRemoteVersion;
 
   Map<String, dynamic>? _stagedInvoiceAttachment;
   Map<String, dynamic>? _stagedInvoiceScan;
@@ -64,6 +66,7 @@ class OfflineFirstWarehouseController extends WarehouseController {
       try {
         await super.refresh();
         _offlineOnline = super.sharedOnline;
+        await _rememberRemoteVersionBestEffort();
       } catch (_) {
         _offlineOnline = false;
       }
@@ -84,6 +87,7 @@ class OfflineFirstWarehouseController extends WarehouseController {
     }
     await super.refresh();
     _offlineOnline = super.sharedOnline;
+    await _rememberRemoteVersionBestEffort();
   }
 
   @override
@@ -106,6 +110,7 @@ class OfflineFirstWarehouseController extends WarehouseController {
 
     await super.setOperationSessionPin(pin);
     _offlineOnline = super.sharedOnline;
+    await _rememberRemoteVersionBestEffort();
     if (!_offlineOnline) {
       syncWarning = 'Офлайн-режим: операции будут сохранены на устройстве и отправлены автоматически после восстановления связи.';
       notifyListeners();
@@ -369,21 +374,43 @@ class OfflineFirstWarehouseController extends WarehouseController {
     } else {
       await super.onAppResumed();
       _offlineOnline = super.sharedOnline;
+      await _rememberRemoteVersionBestEffort();
     }
   }
 
   Future<void> _backgroundTick() async {
-    if (_syncing) return;
-    _pendingSyncCount = await _offline.pendingCount();
-    if (_pendingSyncCount > 0) {
-      await _flushPendingBestEffort(refreshAfter: true);
-      return;
-    }
+    if (_syncing || _polling) return;
+    _polling = true;
     try {
-      await super.onAppResumed();
-      _offlineOnline = super.sharedOnline;
+      _pendingSyncCount = await _offline.pendingCount();
+      if (_pendingSyncCount > 0) {
+        await _flushPendingBestEffort(refreshAfter: true);
+        return;
+      }
+
+      final version = await _remoteSync.fetchVersion();
+      _offlineOnline = true;
+      final previousVersion = _lastSeenRemoteVersion;
+      _lastSeenRemoteVersion = version;
+      if (previousVersion == null || version != previousVersion) {
+        await super.onAppResumed();
+        _offlineOnline = super.sharedOnline;
+        await _rememberRemoteVersionBestEffort();
+      }
     } catch (_) {
       _offlineOnline = false;
+    } finally {
+      _polling = false;
+    }
+  }
+
+  Future<void> _rememberRemoteVersionBestEffort() async {
+    if (!_offlineOnline && !super.sharedOnline) return;
+    try {
+      _lastSeenRemoteVersion = await _remoteSync.fetchVersion();
+    } catch (_) {
+      // The full snapshot already succeeded; a failed lightweight version read
+      // should not turn an otherwise healthy session into an offline state.
     }
   }
 
@@ -429,6 +456,7 @@ class OfflineFirstWarehouseController extends WarehouseController {
           await super.setOperationSessionPin(pin);
           await super.refresh();
           _offlineOnline = super.sharedOnline;
+          await _rememberRemoteVersionBestEffort();
         }
       } else {
         syncWarning = _pendingMessage();
