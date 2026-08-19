@@ -693,23 +693,13 @@ Future<_WriteOffResult?> showWriteOffDialog(BuildContext context, WarehouseContr
                 if (controller.locations.isNotEmpty) const SizedBox(height: 10),
                 TextField(controller: comment, decoration: const InputDecoration(labelText: 'Комментарий')),
                 const SizedBox(height: 16),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: FilledButton.tonalIcon(
-                    onPressed: () async {
-                      final line = await _quantityLineDialog(dialogContext, controller.products, title: 'Что списать');
-                      if (line != null) setState(() => lines[line.product.id] = line);
-                    },
-                    icon: const Icon(Icons.add),
-                    label: const Text('Добавить позицию'),
-                  ),
+                _MovementLinesEditor(
+                  dialogContext: dialogContext,
+                  controller: controller,
+                  lines: lines,
+                  setDialogState: setState,
+                  pickerTitle: 'Что списать',
                 ),
-                for (final line in lines.values)
-                  ListTile(
-                    title: Text(line.product.name),
-                    subtitle: Text(formatStockParts(line.addedMl, line.product.packageSize, line.product.stockUnit)),
-                    trailing: IconButton(onPressed: () => setState(() => lines.remove(line.product.id)), icon: const Icon(Icons.delete_outline)),
-                  ),
               ],
             ),
           ),
@@ -780,23 +770,13 @@ Future<_TransferResult?> showTransferDialog(BuildContext context, WarehouseContr
                 const SizedBox(height: 10),
                 TextField(controller: comment, decoration: const InputDecoration(labelText: 'Комментарий')),
                 const SizedBox(height: 16),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: FilledButton.tonalIcon(
-                    onPressed: () async {
-                      final line = await _quantityLineDialog(dialogContext, controller.products, title: 'Что переместить');
-                      if (line != null) setState(() => lines[line.product.id] = line);
-                    },
-                    icon: const Icon(Icons.add),
-                    label: const Text('Добавить позицию'),
-                  ),
+                _MovementLinesEditor(
+                  dialogContext: dialogContext,
+                  controller: controller,
+                  lines: lines,
+                  setDialogState: setState,
+                  pickerTitle: 'Что переместить',
                 ),
-                for (final line in lines.values)
-                  ListTile(
-                    title: Text(line.product.name),
-                    subtitle: Text(formatStockParts(line.addedMl, line.product.packageSize, line.product.stockUnit)),
-                    trailing: IconButton(onPressed: () => setState(() => lines.remove(line.product.id)), icon: const Icon(Icons.delete_outline)),
-                  ),
               ],
             ),
           ),
@@ -820,6 +800,50 @@ Future<_TransferResult?> showTransferDialog(BuildContext context, WarehouseContr
     employee.dispose();
     comment.dispose();
   });
+}
+
+class _MovementLinesEditor extends StatelessWidget {
+  const _MovementLinesEditor({
+    required this.dialogContext,
+    required this.controller,
+    required this.lines,
+    required this.setDialogState,
+    required this.pickerTitle,
+  });
+
+  final BuildContext dialogContext;
+  final WarehouseController controller;
+  final Map<int, DeliveryDraftLine> lines;
+  final StateSetter setDialogState;
+  final String pickerTitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Align(
+          alignment: Alignment.centerRight,
+          child: FilledButton.tonalIcon(
+            onPressed: () async {
+              final line = await _quantityLineDialog(dialogContext, controller.products, title: pickerTitle);
+              if (line != null) setDialogState(() => lines[line.product.id] = line);
+            },
+            icon: const Icon(Icons.add),
+            label: const Text('Добавить позицию'),
+          ),
+        ),
+        for (final line in lines.values)
+          ListTile(
+            title: Text(line.product.name),
+            subtitle: Text(formatStockParts(line.addedMl, line.product.packageSize, line.product.stockUnit)),
+            trailing: IconButton(
+              onPressed: () => setDialogState(() => lines.remove(line.product.id)),
+              icon: const Icon(Icons.delete_outline),
+            ),
+          ),
+      ],
+    );
+  }
 }
 
 Future<DeliveryDraftLine?> _quantityLineDialog(BuildContext context, List<Product> products, {required String title}) async {
