@@ -3,34 +3,43 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('product card keeps the primary information compact and responsive', () {
-    final card = File('lib/screens/product_detail_compact_v14_screen.dart').readAsStringSync();
+  test('product card stays compact and moves admin actions behind the settings gear', () {
+    final card = File('lib/screens/product_detail_v15_screen.dart').readAsStringSync();
 
     expect(card.contains('BoxConstraints(maxWidth: 880)'), isTrue);
     expect(card.contains('constraints.maxWidth < 520'), isTrue);
-    expect(card.contains('constraints.maxWidth < 680'), isTrue);
     expect(card.contains("Text('ПЕРЕУЧЕСТЬ ТОВАР'"), isTrue);
     expect(card.contains("title: 'Склад'"), isTrue);
     expect(card.contains("title: 'Закупка'"), isTrue);
     expect(card.contains("Text('Продажа'"), isTrue);
     expect(card.contains("title: const Text('Экономика'"), isTrue);
     expect(card.contains("title: const Text('История карточки'"), isTrue);
-    expect(card.contains("_StockStatus('НОРМА'"), isTrue);
-    expect(card.contains("_StockStatus('МАЛО'"), isTrue);
-    expect(card.contains("_StockStatus('КРИТИЧНО'"), isTrue);
-    expect(card.contains("_StockStatus('НЕТ В НАЛИЧИИ'"), isTrue);
+    expect(card.contains("_Status('НОРМА'"), isTrue);
+    expect(card.contains("_Status('МАЛО'"), isTrue);
+    expect(card.contains("_Status('КРИТИЧНО'"), isTrue);
+    expect(card.contains("_Status('НЕТ В НАЛИЧИИ'"), isTrue);
     expect(card.contains("_RowData('Последний переучёт'"), isTrue);
     expect(card.contains("_RowData('Последнее движение'"), isTrue);
+    expect(card.contains("_RowData('Поставщик'"), isTrue);
+    expect(card.contains('Поставщик не назначен'), isTrue);
+    expect(card.contains("tooltip: 'Настройки товара'"), isTrue);
+    expect(card.contains("title: 'Поставщик'"), isTrue);
+    expect(card.contains("title: 'Продажи и цены'"), isTrue);
+    expect(card.contains('Добавить фото товара'), isTrue);
+    expect(card.contains('Заменить фото товара'), isTrue);
+    expect(card.contains('Ввести нового поставщика вручную'), isTrue);
   });
 
-  test('iPhone launcher overrides the legacy long product card with the compact card', () {
-    final launcher = File('ios-web/launch-v14-3.html').readAsStringSync();
-
-    expect(launcher.contains('__BALI_V14_COMPACT_PRODUCT_CARD__'), isTrue);
-    expect(launcher.contains('window.v14ShowProduct=compact'), isTrue);
-    expect(launcher.contains('@media(max-width:520px)'), isTrue);
-    expect(launcher.contains('ПЕРЕУЧЕСТЬ ТОВАР'), isTrue);
-    expect(launcher.contains('<summary>Экономика</summary>'), isTrue);
-    expect(launcher.contains('<summary>История карточки</summary>'), isTrue);
+  test('iPhone V15 UI has the same compact card and settings gear', () {
+    final launcher = File('ios-web/launch-v15.html').readAsStringSync();
+    final ui = File('ios-web/v15-ui.js').readAsStringSync();
+    expect(launcher.contains('v15-ui.js'), isTrue);
+    expect(ui.contains('__BALI_STOCK_V15_UI__'), isTrue);
+    expect(ui.contains('v15Gear'), isTrue);
+    expect(ui.contains('Настройки товара'), isTrue);
+    expect(ui.contains('Поставщик не назначен'), isTrue);
+    expect(ui.contains('Продажи и цены'), isTrue);
+    expect(ui.contains('Ввести нового поставщика'), isTrue);
+    expect(ui.contains('ПЕРЕУЧЕСТЬ ТОВАР'), isTrue);
   });
 }

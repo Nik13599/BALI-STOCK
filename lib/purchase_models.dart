@@ -19,9 +19,24 @@ class StockPurchaseRequest {
   final DateTime updatedAt;
   final List<StockPurchaseRequestLine> lines;
 
+  String get shortNumber {
+    final date = createdAt;
+    final suffix = id.replaceAll('-', '').toUpperCase();
+    final tail = suffix.length >= 4 ? suffix.substring(0, 4) : suffix;
+    return 'ЗАК-${date.year}-${date.month.toString().padLeft(2, '0')}${date.day.toString().padLeft(2, '0')}-$tail';
+  }
+
+  /// Only a confirmed/sent/partial request is a real outstanding order.
+  /// A draft must not reduce the automatic purchase recommendation.
+  bool get isOpen => const {'confirmed', 'sent', 'partial'}.contains(status);
+  bool get countsAsOrdered => isOpen;
+  bool get canReceive => isOpen;
+
   String get statusLabel => switch (status) {
+        'confirmed' => 'Подтверждена',
         'sent' => 'Отправлена',
-        'received' => 'Получена',
+        'partial' => 'Частично поставлена',
+        'completed' => 'Выполнена',
         'cancelled' => 'Отменена',
         _ => 'Черновик',
       };
@@ -48,6 +63,35 @@ class StockPurchaseRequestLine {
     required this.productKey,
     required this.suggestedQuantity,
     required this.requestedQuantity,
+    this.receivedQuantity = 0,
+    this.unitCost,
+    this.comment,
+  });
+
+  final String productKey;
+  final int suggestedQuantity;
+  final int requestedQuantity;
+  final int receivedQuantity;
+  final double? unitCost;
+  final String? comment;
+
+  int get outstandingQuantity => (requestedQuantity - receivedQuantity).clamp(0, 1 << 60);
+
+  factory StockPurchaseRequestLine.fromJson(Map<dynamic, dynamic> json) => StockPurchaseRequestLine(
+        productKey: '${json['product_key'] ?? ''}',
+        suggestedQuantity: _int(json['suggested_quantity']),
+        requestedQuantity: _int(json['requested_quantity']),
+        receivedQuantity: _int(json['received_quantity']),
+        unitCost: _double(json['unit_cost']),
+        comment: _text(json['comment']),
+      );
+}
+
+class PurchaseRequestDraftLine {
+  const PurchaseRequestDraftLine({
+    required this.productKey,
+    required this.suggestedQuantity,
+    required this.requestedQuantity,
     this.unitCost,
     this.comment,
   });
@@ -57,14 +101,6 @@ class StockPurchaseRequestLine {
   final int requestedQuantity;
   final double? unitCost;
   final String? comment;
-
-  factory StockPurchaseRequestLine.fromJson(Map<dynamic, dynamic> json) => StockPurchaseRequestLine(
-        productKey: '${json['product_key'] ?? ''}',
-        suggestedQuantity: _int(json['suggested_quantity']),
-        requestedQuantity: _int(json['requested_quantity']),
-        unitCost: _double(json['unit_cost']),
-        comment: _text(json['comment']),
-      );
 }
 
 int _int(Object? value) {

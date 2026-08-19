@@ -42,14 +42,8 @@ void main() {
   test('V14 economics calculates cost, margin and potential revenue', () {
     final product = sampleProduct();
     const portion = PortionPrice(amount: 50, price: 10);
-    const meta = ProductV14Meta(
-      sellByBottle: true,
-      bottleSalePrice: 70,
-      portionSale: true,
-      portions: [portion],
-    );
+    const meta = ProductV14Meta(sellByBottle: true, bottleSalePrice: 70, portionSale: true, portions: [portion]);
     final economics = ProductEconomics(product: product, meta: meta);
-
     expect(product.totalAmount, 2450);
     expect(economics.costPerBaseUnit, closeTo(0.05, 0.000001));
     expect(economics.stockCost, closeTo(122.5, 0.000001));
@@ -79,7 +73,6 @@ void main() {
       imageUrl: 'https://example.invalid/test.webp',
     );
     final restored = ProductV14Meta.fromJson(original.toJson());
-
     expect(restored.sellByBottle, isTrue);
     expect(restored.bottleSalePrice, 88.5);
     expect(restored.portionSale, isTrue);
@@ -101,9 +94,8 @@ void main() {
 
   test('PDF contract covers stock, purchases, deliveries/stocktakes and history operations', () {
     final pdf = File('lib/services/pdf_export_service.dart').readAsStringSync();
-    final stock = File('lib/screens/stock_v14_screen.dart').readAsStringSync();
+    final stock = File('lib/screens/stock_v15_screen.dart').readAsStringSync();
     final history = File('lib/screens/history_overview_screen.dart').readAsStringSync();
-
     expect(pdf.contains('exportCurrentStock'), isTrue);
     expect(pdf.contains('exportPurchaseList'), isTrue);
     expect(pdf.contains('exportOperation'), isTrue);
@@ -116,7 +108,6 @@ void main() {
   test('offline-first queue covers critical mutations and automatic retry', () {
     final source = File('lib/offline_first_controller.dart').readAsStringSync();
     final outbox = File('lib/data/offline_mutation_repository.dart').readAsStringSync();
-
     expect(source.contains("_offline.enqueue('delivery'"), isTrue);
     expect(source.contains("_offline.enqueue('stocktake'"), isTrue);
     expect(RegExp(r"_offline\.enqueue\(\s*'writeoff'").hasMatch(source), isTrue);
@@ -127,29 +118,40 @@ void main() {
     expect(outbox.contains('client_action_id'), isTrue);
   });
 
-  test('V14 product card contract includes mandatory delivery cost, image, spot count and batch editing', () {
+  test('product card keeps delivery cost integrity, image settings, supplier and spot count', () {
     final controller = File('lib/v14_controller.dart').readAsStringSync();
-    final detail = File('lib/screens/product_detail_compact_v14_screen.dart').readAsStringSync();
+    final detail = File('lib/screens/product_detail_v15_screen.dart').readAsStringSync();
     final bulk = File('lib/screens/bulk_product_edit_v14_screen.dart').readAsStringSync();
-
     expect(controller.contains('Закупочная цена обязательна для каждой позиции поставки'), isTrue);
     expect(controller.contains('uploadProductImage'), isTrue);
     expect(controller.contains("_outbox.enqueue('spot_stocktake'"), isTrue);
     expect(controller.contains("_outbox.enqueue('catalog_product_batch'"), isTrue);
     expect(detail.contains('ПЕРЕУЧЕСТЬ ТОВАР'), isTrue);
-    expect(detail.contains('Добавить фото'), isTrue);
+    expect(detail.contains('Добавить фото товара'), isTrue);
     expect(detail.contains('Продажи и цены'), isTrue);
+    expect(detail.contains('Поставщик не назначен'), isTrue);
+    expect(detail.contains('Настройки товара'), isTrue);
     expect(bulk.contains('Массовое редактирование'), isTrue);
+  });
+
+  test('stock views are grouped by category and alphabetically inside each category', () {
+    final stock = File('lib/screens/stock_v15_screen.dart').readAsStringSync();
+    expect(stock.contains('_categoryOrder'), isTrue);
+    expect(stock.contains('a.name.toLowerCase().compareTo(b.name.toLowerCase())'), isTrue);
+    expect(stock.contains('Категории → А–Я'), isTrue);
+    expect(stock.contains('_categoryHeader'), isTrue);
+    expect(stock.contains('StockListViewMode.compact'), isTrue);
+    expect(stock.contains('StockListViewMode.detailed'), isTrue);
+    expect(stock.contains('StockListViewMode.table'), isTrue);
   });
 
   test('purchase price is read-only outside real deliveries and RPC writes are hardened', () {
     final control = File('lib/screens/control_screen.dart').readAsStringSync();
     final migration = File('supabase/migrations/20260819_v14_purchase_price_integrity.sql').readAsStringSync();
-
     expect(control.contains("labelText: 'Закупочная цена, BYN'"), isFalse);
     expect(control.contains('Вручную она не редактируется и обновляется только поставкой.'), isTrue);
     expect(migration.contains('prior_cost'), isTrue);
-    expect(migration.contains("update public.stock_products set default_cost=cost,cost_currency=currency"), isTrue);
+    expect(migration.contains('update public.stock_products set default_cost=cost,cost_currency=currency'), isTrue);
     expect(migration.contains("values(p_product_key,p_supplier,p_sku,null,'BYN'"), isTrue);
     expect(migration.contains("revoke all on function ' || fn || ' from anon"), isTrue);
     expect(migration.contains("grant execute on function ' || fn || ' to service_role"), isTrue);

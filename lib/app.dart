@@ -3,7 +3,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import 'screens/control_hub_v14_screen.dart';
-import 'screens/delivery_screen.dart';
+import 'screens/delivery_screen_v15.dart';
 import 'screens/home_v14_screen.dart';
 import 'screens/purchase_screen.dart';
 import 'screens/stock_v14_screen.dart';
@@ -107,8 +107,6 @@ class _BaliStockShellState extends State<BaliStockShell> with WidgetsBindingObse
 
   Future<void> _select(int index) async {
     if (index == _selectedIndex) return;
-    // Full stocktake and delivery change the shared warehouse balance and therefore
-    // require the operation PIN before the section opens.
     if (index == 2 || index == 4) {
       final pin = await showOperationPinValueDialog(context);
       if (!mounted || pin == null) return;
@@ -138,7 +136,7 @@ class _BaliStockShellState extends State<BaliStockShell> with WidgetsBindingObse
       case 3:
         return PurchaseScreen(controller: widget.controller);
       case 4:
-        return DeliveryScreen(controller: widget.controller);
+        return DeliveryScreenV15(controller: widget.controller);
       case 5:
         return ControlHubV14Screen(controller: widget.controller);
       case 0:
