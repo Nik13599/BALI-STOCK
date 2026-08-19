@@ -1,6 +1,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
-const SOURCE = "https://mvnxfouyoynqyjdpcblh.supabase.co/storage/v1/object/public/bali-stock-runtime/production/bali-stock.html";
+const ROOT = "https://mvnxfouyoynqyjdpcblh.supabase.co/storage/v1/object/public/bali-stock-runtime";
+const SOURCE = `${ROOT}/production/bali-stock.html`;
+const META = `${ROOT}/production/metadata.json`;
 const headers = {
   "Content-Type": "text/html; charset=utf-8",
   "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
@@ -10,13 +12,31 @@ const headers = {
   "X-Content-Type-Options": "nosniff",
 };
 
+async function metadata() {
+  try {
+    const r = await fetch(`${META}?v=${Date.now()}`, { cache: "no-store" });
+    if (!r.ok) throw new Error(String(r.status));
+    const value = await r.json();
+    return {
+      version: String(value?.version ?? "1.0.1"),
+      build: Number(value?.build ?? 101),
+      sha256: String(value?.sha256 ?? ""),
+    };
+  } catch (_) {
+    return { version: "1.0.1", build: 101, sha256: "" };
+  }
+}
+
 Deno.serve(async (req: Request) => {
   try {
     const url = new URL(req.url);
     if (url.searchParams.get("health") === "1") {
+      const meta = await metadata();
       return Response.json({
         ok: true,
-        version: "1.0.1",
+        version: meta.version,
+        build: meta.build,
+        sha256: meta.sha256,
         source: "supabase-storage",
         github_dependency: false,
         password_prompt: false,
@@ -28,15 +48,12 @@ Deno.serve(async (req: Request) => {
       }, { headers: { "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" } });
     }
 
-    const response = await fetch(`${SOURCE}?v=${Date.now()}`, {
-      cache: "no-store",
-      headers: { Accept: "text/plain,*/*" },
-    });
+    const response = await fetch(`${SOURCE}?v=${Date.now()}`, { cache: "no-store", headers: { Accept: "text/plain,*/*" } });
     if (!response.ok) throw new Error(`runtime storage HTTP ${response.status}`);
     const html = await response.text();
     if (!/^\s*<!doctype html>/i.test(html) || !html.includes("BALI STOCK")) throw new Error("runtime storage returned invalid HTML");
     if (html.includes("raw.githack.com") || html.includes("raw.githubusercontent.com/Nik13599/BALI-STOCK")) throw new Error("GitHub dependency detected");
-    if (html.includes("Введите пароль доступа")) throw new Error("password prompt detected");
+    if (html.includes("Введите пароль доступа") || html.includes("x-bali-stock-pin")) throw new Error("password flow detected");
     if (!html.includes("__BALI_STOCK_SUPABASE_RUNTIME__")) throw new Error("runtime marker missing");
     return new Response(html, { status: 200, headers });
   } catch (error) {
