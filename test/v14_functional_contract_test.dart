@@ -141,4 +141,17 @@ void main() {
     expect(detail.contains('Продажи и цены'), isTrue);
     expect(bulk.contains('Массовое редактирование'), isTrue);
   });
+
+  test('purchase price is read-only outside real deliveries and RPC writes are hardened', () {
+    final control = File('lib/screens/control_screen.dart').readAsStringSync();
+    final migration = File('supabase/migrations/20260819_v14_purchase_price_integrity.sql').readAsStringSync();
+
+    expect(control.contains("labelText: 'Закупочная цена, BYN'"), isFalse);
+    expect(control.contains('Вручную она не редактируется и обновляется только поставкой.'), isTrue);
+    expect(migration.contains('prior_cost'), isTrue);
+    expect(migration.contains("update public.stock_products set default_cost=cost,cost_currency=currency"), isTrue);
+    expect(migration.contains("values(p_product_key,p_supplier,p_sku,null,'BYN'"), isTrue);
+    expect(migration.contains("revoke all on function ' || fn || ' from anon"), isTrue);
+    expect(migration.contains("grant execute on function ' || fn || ' to service_role"), isTrue);
+  });
 }
