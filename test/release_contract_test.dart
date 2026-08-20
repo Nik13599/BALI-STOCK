@@ -17,11 +17,14 @@ void main() {
     expect(app.contains('BaliNavIconKind.settings'), isTrue);
   });
 
-  test('home exposes camera scan, name/code search and manual product code', () {
+  test('home exposes platform-correct scan, name/code search and manual product code', () {
     final home = File('lib/screens/home_v14_screen.dart').readAsStringSync();
+    final scanner = File('lib/widgets/product_code_actions.dart').readAsStringSync();
     expect(home.contains('scanProductCode(context)'), isTrue);
     expect(home.contains('enterProductCode(context)'), isTrue);
-    expect(home.contains('Сканировать камерой'), isTrue);
+    expect(home.contains('productCodeScanActionLabel'), isTrue);
+    expect(scanner.contains("Platform.isAndroid || Platform.isIOS ? 'Сканировать камерой' : 'Сканировать сканером'"), isTrue);
+    expect(scanner.contains('USB/Bluetooth-сканером'), isTrue);
     expect(home.contains("labelText: 'Найти по названию или коду товара'"), isTrue);
     expect(home.contains('Ввести код товара'), isTrue);
     expect(home.contains("p.barcode ?? ''"), isTrue);
