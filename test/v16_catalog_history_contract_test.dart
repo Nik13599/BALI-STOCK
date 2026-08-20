@@ -13,10 +13,15 @@ void main() {
     expect(editor.contains('Закупочная цена вручную не задаётся'), isTrue);
   });
 
-  test('dedicated catalog API is no-pin but strips purchase price fields', () {
+  test('dedicated catalog API is no-pin, app-key protected and strips purchase price fields', () {
     final source = File('supabase/functions/bali-stock-catalog-api/index.ts').readAsStringSync();
+    final client = File('lib/services/catalog_editor_service_v16.dart').readAsStringSync();
     expect(source.contains('requirePin'), isFalse);
     expect(source.contains('INVALID_PIN'), isFalse);
+    expect(source.contains('function requireClient(req: Request)'), isTrue);
+    expect(source.contains('CLIENT_KEY_REQUIRED'), isTrue);
+    expect(source.contains('CLIENT_KEY_INVALID'), isTrue);
+    expect(client.contains('..._remote.readHeaders'), isTrue);
     expect(source.contains('delete item.default_cost'), isTrue);
     expect(source.contains('delete item.cost_currency'), isTrue);
     expect(source.contains('stock_catalog_products_batch_v14'), isTrue);
