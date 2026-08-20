@@ -28,6 +28,29 @@ void main() {
     expect(remote.contains("headers: {...readHeaders, 'Content-Type': 'application/json'}"), isTrue);
   });
 
+  test('offline queue sync is passwordless and forwards to client API', () {
+    final sync = File('supabase/functions/bali-stock-sync-api/index.ts').readAsStringSync();
+    final client = File('lib/data/remote_stock_sync_extension.dart').readAsStringSync();
+    expect(sync.contains('/functions/v1/bali-stock-client-api'), isTrue);
+    expect(sync.contains('/functions/v1/bali-stock-api'), isFalse);
+    expect(sync.contains('forward(pin'), isFalse);
+    expect(sync.contains('client_action_id'), isTrue);
+    expect(sync.contains('delivery_bundle'), isTrue);
+    expect(client.contains('x-bali-stock-pin'), isFalse);
+  });
+
+  test('legacy stock API is Supabase-only and contains no GitHub seed dependency', () {
+    final legacy = File('supabase/functions/bali-stock-api/index.ts').readAsStringSync();
+    expect(legacy.contains('raw.githubusercontent.com/Nik13599/BALI-STOCK'), isFalse);
+    expect(legacy.contains('raw.githack.com/Nik13599/BALI-STOCK'), isFalse);
+    expect(legacy.contains('cdn.jsdelivr.net/gh/Nik13599/BALI-STOCK'), isFalse);
+    expect(legacy.contains('/functions/v1/bali-stock-client-api'), isTrue);
+    expect(legacy.contains('stock_products'), isTrue);
+    expect(legacy.contains('stock_sync_state'), isTrue);
+    expect(legacy.contains('requirePin'), isFalse);
+    expect(legacy.contains('INVALID_PIN'), isFalse);
+  });
+
   test('iPhone installation profile is independent from GitHub', () {
     final generator = File('tool/generate_mobileconfig.py').readAsStringSync();
     final smoke = File('.github/workflows/iphone-runtime-smoke.yml').readAsStringSync();
@@ -64,8 +87,34 @@ void main() {
     expect(pages.contains('intentionally retired'), isTrue);
   });
 
-  test('password removal is an update of the production baseline', () {
+  test('password removal remains an update of the production baseline', () {
     final pubspec = File('pubspec.yaml').readAsStringSync();
-    expect(pubspec.contains('version: 1.0.1+101'), isTrue);
+    final match = RegExp(r'^version:\s*(\d+)\.(\d+)\.(\d+)\+(\d+)\s*$', multiLine: true).firstMatch(pubspec);
+    expect(match, isNotNull);
+
+    final major = int.parse(match!.group(1)!);
+    final minor = int.parse(match.group(2)!);
+    final patch = int.parse(match.group(3)!);
+    final build = int.parse(match.group(4)!);
+    final versionIsAtLeast101 = major > 1 ||
+        (major == 1 && (minor > 0 || (minor == 0 && patch >= 1)));
+
+    expect(versionIsAtLeast101, isTrue);
+    expect(build, greaterThanOrEqualTo(101));
+  });
+
+  test('legacy iPhone launchers never load BALI STOCK application code from GitHub', () {
+    const paths = [
+      'ios-web/index.html',
+      'ios-web/launch-v14-3.html',
+      'ios-web/launch-v15.html',
+      'ios-web/launch-v16.html',
+    ];
+    for (final path in paths) {
+      final source = File(path).readAsStringSync();
+      expect(source.contains('raw.githack.com/Nik13599/BALI-STOCK'), isFalse, reason: path);
+      expect(source.contains('raw.githubusercontent.com/Nik13599/BALI-STOCK'), isFalse, reason: path);
+      expect(source.contains('cdn.jsdelivr.net/gh/Nik13599/BALI-STOCK'), isFalse, reason: path);
+    }
   });
 }

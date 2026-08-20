@@ -1,15 +1,15 @@
-# BALI STOCK V14
+# BALI STOCK 1.0.2
 
 Кроссплатформенное приложение складского учёта и переучёта для BALI.
 
 ## Платформы
 
-- Windows 10/11 x64 — полноценный установщик `.exe`.
-- Android — универсальный установочный `.apk`.
+- Windows 10/11 x64 — полноценный production-установщик `.exe`.
+- Android — production `.apk` с постоянной signing identity для обновлений поверх установленной версии.
 - iPhone/iPad — профиль `.mobileconfig`, который устанавливает BALI STOCK как Web Clip на экран Домой.
 - Native iOS Flutter build — формируется отдельно без подписи; для установки как обычного `.ipa` требуется Apple signing / provisioning profile.
 
-## Что входит в V14
+## Что входит в 1.0.x
 
 - Главная с быстрым поиском товара, QR/штрихкодом и ручным вводом кода.
 - Склад в трёх режимах: компактно, подробно и таблица.
@@ -18,53 +18,66 @@
 - Закупочная цена меняется только через фактическую поставку. Поставка без закупочной цены блокируется.
 - Полный переучёт с черновиками и фиксацией длительности.
 - Точечный переучёт с причиной, ФИО, устройством, `было → разница → стало` и offline-first синхронизацией.
-- История операций и история карточек/цен внутри раздела «Контроль».
+- История операций и история карточек/цен внутри раздела «Настройки / Контроль»; отдельной нижней вкладки «История» нет.
 - PDF текущих остатков и операций.
-- Общая Supabase-база и локальный SQLite-кэш для автономной работы.
+- Общая Supabase-база и локальный SQLite-кэш для автономной работы Flutter-клиентов.
+- Пользовательские пароли/PIN не используются.
+- iPhone Web Clip использует стабильный Supabase runtime без зависимости от GitHub Pages/raw GitHub и имеет защитный fallback обновления складского снимка, чтобы отсутствие `snapshot()` не блокировало интерфейс.
+- Кастомные навигационные иконки используются в Flutter-клиентах и iPhone Web Clip.
 
-## Установщики
+## Production-установщики
 
-GitHub Actions workflow `Build BALI STOCK` формирует следующие артефакты:
+Workflow `Release BALI STOCK Production` формирует стабильные файлы:
 
-- `BALI-STOCK-Windows-Installer` → `BALI-STOCK-Windows-v14-Setup.exe`.
-- `BALI-STOCK-Android-Installer` → `BALI-STOCK-Android-v14.apk`.
-- `BALI-STOCK-iPhone-WebClip` → `BALI-STOCK-iPhone.mobileconfig`.
-- `BALI-STOCK-iOS-unsigned` → архив нативного `Runner.app` без Apple-подписи.
+- `BALI-STOCK-Windows-Setup.exe`
+- `BALI-STOCK-Android.apk`
+- `BALI-STOCK-iPhone.mobileconfig`
+- `BALI-STOCK-SHA256.txt`
+
+Обычный workflow `Build BALI STOCK` создаёт только CI-артефакты для проверки и не должен использоваться как production-канал установки.
 
 ### Windows
 
-Запустите `BALI-STOCK-Windows-v14-Setup.exe`. По умолчанию приложение устанавливается в профиль текущего пользователя и не требует установки Flutter или Visual C++ вручную.
+Запустите `BALI-STOCK-Windows-Setup.exe`. При следующем production-релизе новый Setup устанавливается поверх предыдущей версии благодаря постоянному AppId.
 
 ### Android
 
-Откройте `BALI-STOCK-Android-v14.apk` на устройстве и разрешите установку приложений из выбранного источника, если Android запросит это разрешение.
+Откройте `BALI-STOCK-Android.apk` на устройстве и разрешите установку приложений из выбранного источника, если Android запросит это разрешение. Начиная с production-базы 1.0.0 последующие APK подписываются той же production identity и устанавливаются поверх предыдущей production-версии.
 
 ### iPhone / iPad
 
-Откройте `BALI-STOCK-iPhone.mobileconfig` на устройстве. Затем установите загруженный профиль через настройки iOS. Профиль добавит BALI STOCK на экран Домой и будет открывать актуальную серверную Web Clip-версию.
+Откройте `BALI-STOCK-iPhone.mobileconfig` на устройстве. Затем установите загруженный профиль через настройки iOS. Профиль добавит BALI STOCK на экран Домой и будет открывать актуальную серверную Web Clip-версию через стабильный Supabase runtime.
 
-## Проверка качества перед сборкой
+Повторно устанавливать профиль для обычных обновлений интерфейса не требуется: production runtime обновляется за тем же URL.
 
-Релизный workflow обязательно выполняет:
+## Проверка качества перед release
 
-1. `python tool/code_health_check.py --fail-on-orphans`
+Production и PR-gate выполняют:
+
+1. `python tool/code_health_check.py --fail-on-orphans --fail-on-clones`
 2. `flutter analyze`
 3. `flutter test`
 4. release-сборки Android / Windows / iOS
+5. проверку постоянной Android production-подписи
+6. проверку iPhone runtime и всех встроенных JavaScript-блоков
+7. проверку отсутствия GitHub runtime-зависимости и пользовательских password/PIN flow
 
-`tool/code_health_check.py` проверяет повторяющиеся импорты, последовательные дубли строк, хвостовые пробелы, дубли SKU в стартовом каталоге и Dart-файлы, которые больше не достижимы от `lib/main.dart`.
+Отдельные workflow `iPhone Runtime Smoke` и `iPhone Production Runtime Builder Smoke` проверяют production Web Clip, навигацию, синтаксис встроенного JavaScript, Supabase runtime и регрессию, при которой `snapshot()` отсутствует в базовом iPhone runtime.
+
+`tool/code_health_check.py` проверяет повторяющиеся импорты, последовательные дубли строк, клоны крупных блоков, хвостовые пробелы, дубли SKU в стартовом каталоге и Dart-файлы, которые больше не достижимы от `lib/main.dart`.
 
 ## Основная структура
 
-- `lib/app.dart` — оболочка и навигация V14.
-- `lib/v14_controller.dart` — V14 orchestration и offline-first операции.
+- `lib/app.dart` — оболочка и навигация приложения.
+- `lib/v14_controller.dart` — orchestration и offline-first операции.
 - `lib/v14_models.dart` — продажные настройки и экономика SKU.
 - `lib/data/` — SQLite, Supabase API, sync/outbox и локальные кэши.
 - `lib/screens/` — рабочие экраны склада.
-- `ios-web/` — iPhone Web Clip UI.
+- `ios-web/` — iPhone Web Clip UI и compatibility-модули.
 - `tool/generate_mobileconfig.py` — генератор iPhone-профиля.
+- `tool/build_ios_production_runtime.py` — сборка самодостаточного iPhone runtime.
 - `installer/windows/bali_stock.iss` — Windows installer definition.
 
 ## Версия
 
-Текущая ветка релиза: `0.14.0+14`.
+Текущая release candidate: `1.0.2+102`.

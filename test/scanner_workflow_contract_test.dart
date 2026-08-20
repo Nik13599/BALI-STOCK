@@ -36,11 +36,14 @@ void main() {
     expect(source.contains('Navigator.of(context).pop(value)'), isTrue);
   });
 
-  test('home supports camera scan, manual product code and name/code search', () {
+  test('home supports platform-correct scan, manual product code and name/code search', () {
     final source = File('lib/screens/home_v14_screen.dart').readAsStringSync();
+    final actions = File('lib/widgets/product_code_actions.dart').readAsStringSync();
     expect(source.contains('scanProductCode(context)'), isTrue);
     expect(source.contains('enterProductCode(context)'), isTrue);
-    expect(source.contains('Сканировать камерой'), isTrue);
+    expect(source.contains('productCodeScanActionLabel'), isTrue);
+    expect(actions.contains("Platform.isAndroid || Platform.isIOS ? 'Сканировать камерой' : 'Сканировать сканером'"), isTrue);
+    expect(actions.contains('USB/Bluetooth-сканером'), isTrue);
     expect(source.contains('Ввести код товара'), isTrue);
     expect(source.contains('Найти по названию или коду товара'), isTrue);
     expect(source.contains("p.barcode ?? ''"), isTrue);
