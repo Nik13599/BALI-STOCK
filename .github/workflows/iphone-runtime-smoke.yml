@@ -44,10 +44,15 @@ jobs:
                   'prefillRequest',
               ],
               'ios-web/v15-compat.js': [
-                  '__BALI_STOCK_V15_COMPAT__',
+                  "__BALI_STOCK_V15_COMPAT__ = '15.1'",
                   "v14Photo: 'v14pcPhoto'",
                   "v14Edit: 'v14pcEdit'",
                   "v14Spot: 'v14pcStocktake'",
+                  '__BALI_STOCK_SNAPSHOT_FALLBACK__',
+                  'window.snapshot = fallbackSnapshot',
+                  'window.baliRefreshSnapshot',
+                  'bali-custom-nav-icon',
+                  'iconPaths',
               ],
               'ios-web/v16-catalog-history.js': [
                   '__BALI_STOCK_V16_CATALOG_HISTORY__',
@@ -69,6 +74,39 @@ jobs:
           node --check ios-web/v15-delivery-link.js
           node --check ios-web/v15-compat.js
           node --check ios-web/v16-catalog-history.js
+
+      - name: Regression test missing snapshot does not crash compat layer
+        run: |
+          node - <<'JS'
+          const fs = require('fs');
+          const vm = require('vm');
+          const source = fs.readFileSync('ios-web/v15-compat.js', 'utf8');
+          const document = {
+            getElementById() { return null; },
+            querySelectorAll() { return []; },
+            createElement() { return { id: '', className: '', textContent: '', style: {}, setAttribute() {} }; },
+            head: { appendChild() {} },
+            body: {},
+            documentElement: {},
+            readyState: 'complete',
+            addEventListener() {},
+          };
+          function MutationObserver() { this.observe = function () {}; }
+          const context = {
+            document,
+            MutationObserver,
+            console,
+            setTimeout(fn) { fn(); return 1; },
+            clearTimeout() {},
+          };
+          context.window = context;
+          vm.createContext(context);
+          vm.runInContext(source, context, { filename: 'v15-compat.js' });
+          if (typeof context.snapshot !== 'function') throw new Error('snapshot fallback was not installed');
+          if (context.__BALI_STOCK_SNAPSHOT_FALLBACK__ !== true) throw new Error('snapshot fallback marker is not true');
+          if (typeof context.baliRefreshSnapshot !== 'function') throw new Error('guarded snapshot helper missing');
+          console.log('Missing snapshot regression guard OK');
+          JS
 
       - name: Validate generated iPhone profile uses Supabase only
         run: |
