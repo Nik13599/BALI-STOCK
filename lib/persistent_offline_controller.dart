@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'data/offline_control_cache_repository.dart';
 import 'offline_first_controller.dart';
 
@@ -13,25 +15,26 @@ class PersistentOfflineWarehouseController extends OfflineFirstWarehouseControll
     final cached = await _cache.load();
     if (cached != null) _applyCached(cached);
     await super.initialize();
-    await _saveIfOnline();
+    unawaited(_saveIfOnline());
   }
 
   @override
   Future<void> refresh() async {
     await super.refresh();
-    await _saveIfOnline();
+    unawaited(_saveIfOnline());
   }
 
   @override
-  Future<void> setOperationSessionPin(String pin) async {
-    await super.setOperationSessionPin(pin);
-    await _saveIfOnline();
+  Future<void> setOperationSessionPin(String pin) {
+    final result = super.setOperationSessionPin(pin);
+    unawaited(_saveIfOnline());
+    return result;
   }
 
   @override
   Future<void> onAppResumed() async {
     await super.onAppResumed();
-    await _saveIfOnline();
+    unawaited(_saveIfOnline());
   }
 
   void _applyCached(OfflineControlCache cache) {

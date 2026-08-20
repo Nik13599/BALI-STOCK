@@ -44,6 +44,7 @@ class OfflineFirstWarehouseController extends WarehouseController {
   bool _offlineOnline = false;
   int _pendingSyncCount = 0;
   int? _lastSeenRemoteVersion;
+  Future<void>? _sessionPreparation;
 
   Map<String, dynamic>? _stagedInvoiceAttachment;
   Map<String, dynamic>? _stagedInvoiceScan;
@@ -91,20 +92,21 @@ class OfflineFirstWarehouseController extends WarehouseController {
   }
 
   @override
-  Future<void> setOperationSessionPin(String pin) async {
+  Future<void> setOperationSessionPin(String pin) {
     _syncPin = pin;
-    _pendingSyncCount = await _offline.pendingCount();
+    super.primeOperationSessionPin(pin);
+    if (_sessionPreparation == null) {
+      final task = _prepareOperationSession(pin);
+      _sessionPreparation = task;
+      unawaited(task.whenComplete(() => _sessionPreparation = null));
+    }
+    return Future<void>.value();
+  }
 
+  Future<void> _prepareOperationSession(String pin) async {
+    _pendingSyncCount = await _offline.pendingCount();
     if (_pendingSyncCount > 0) {
-      try {
-        await _remoteSync.authorize(pin);
-        _offlineOnline = true;
-        await _flushPendingBestEffort(refreshAfter: true);
-      } catch (_) {
-        _offlineOnline = false;
-        syncWarning = _pendingMessage();
-        notifyListeners();
-      }
+      await _flushPendingBestEffort(refreshAfter: true);
       return;
     }
 
@@ -120,8 +122,8 @@ class OfflineFirstWarehouseController extends WarehouseController {
   @override
   void clearOperationSessionPin() {
     if (_pendingSyncCount > 0) {
-      // Keep the already verified PIN in volatile memory only until the queued
-      // operations have been delivered. It is never written to SQLite.
+      // Keep the already verified automatic credential in volatile memory only
+      // until queued operations have been delivered. It is never written to SQLite.
       return;
     }
     _syncPin = null;
@@ -144,8 +146,6 @@ class OfflineFirstWarehouseController extends WarehouseController {
       'mime_type': mimeType,
       'data_base64': base64Encode(bytes),
     };
-    // This marker is only local and is replaced with the private server path
-    // by bali-stock-sync-api when the outbox is delivered.
     return 'pending://invoice/${DateTime.now().microsecondsSinceEpoch}';
   }
 
@@ -309,6 +309,21 @@ class OfflineFirstWarehouseController extends WarehouseController {
   }
 
   @override
+  Future<StocktakeDraft> resumeStocktakeDraft(int draftId) async {
+    _requireLocalPin();
+    final draft = await _local.resumeStocktakeDraft(draftId);
+    await _reloadLocalOffline();
+    return draft;
+  }
+
+  @override
+  Future<void> pauseStocktakeDraft(int draftId, int activeSeconds) async {
+    _requireLocalPin();
+    await _local.pauseStocktakeDraft(draftId, activeSeconds);
+    await _reloadLocalOffline();
+  }
+
+  @override
   Future<void> deleteStocktakeDraft(int draftId) async {
     _requireLocalPin();
     final draft = await _draftReader.readDraft(draftId);
@@ -409,8 +424,8 @@ class OfflineFirstWarehouseController extends WarehouseController {
     try {
       _lastSeenRemoteVersion = await _remoteSync.fetchVersion();
     } catch (_) {
-      // The full snapshot already succeeded; a failed lightweight version read
-      // should not turn an otherwise healthy session into an offline state.
+      // A failed lightweight version read should not turn a healthy snapshot
+      // into a blocking UI error.
     }
   }
 
@@ -419,7 +434,7 @@ class OfflineFirstWarehouseController extends WarehouseController {
     _pendingSyncCount = await _offline.pendingCount();
     syncWarning = _pendingMessage();
     notifyListeners();
-    await _flushPendingBestEffort(refreshAfter: true);
+    unawaited(_flushPendingBestEffort(refreshAfter: true));
   }
 
   Future<void> _flushPendingBestEffort({bool refreshAfter = false}) async {
@@ -435,7 +450,6 @@ class OfflineFirstWarehouseController extends WarehouseController {
 
     _syncing = true;
     try {
-      await _remoteSync.authorize(pin);
       _offlineOnline = true;
       while (true) {
         final item = await _offline.nextPending();
@@ -454,7 +468,6 @@ class OfflineFirstWarehouseController extends WarehouseController {
         syncWarning = null;
         if (refreshAfter) {
           await super.setOperationSessionPin(pin);
-          await super.refresh();
           _offlineOnline = super.sharedOnline;
           await _rememberRemoteVersionBestEffort();
         }
@@ -489,8 +502,9 @@ class OfflineFirstWarehouseController extends WarehouseController {
 
   String _requireLocalPin() {
     final pin = _syncPin ?? lastVerifiedOperationPin;
-    if (pin == null) throw StateError('Введите PIN для проведения операции.');
+    if (pin == null) throw StateError('Не удалось открыть автоматический сеанс операции.');
     _syncPin ??= pin;
+    super.primeOperationSessionPin(pin);
     return pin;
   }
 

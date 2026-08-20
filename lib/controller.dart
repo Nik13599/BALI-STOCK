@@ -63,9 +63,12 @@ class WarehouseController extends ChangeNotifier {
   }
 
   Future<void> refresh() async {
-    loading = true;
+    final showBlockingLoader = products.isEmpty && categories.isEmpty && operations.isEmpty;
+    if (showBlockingLoader) {
+      loading = true;
+      notifyListeners();
+    }
     error = null;
-    notifyListeners();
     try {
       await _loadLocal();
       await _pullRemote(silent: true);
@@ -77,11 +80,14 @@ class WarehouseController extends ChangeNotifier {
     }
   }
 
-  Future<void> setOperationSessionPin(String pin) async {
+  void primeOperationSessionPin(String pin) {
     _sessionPin = pin;
     syncWarning = null;
+  }
+
+  Future<void> setOperationSessionPin(String pin) async {
+    primeOperationSessionPin(pin);
     try {
-      await _remote.authorize(pin);
       final snapshot = await _remote.fetchSnapshot();
       _sharedOnline = true;
       final remoteProducts = snapshot['products'];
@@ -109,7 +115,7 @@ class WarehouseController extends ChangeNotifier {
   Future<void> _ensureCatalogEditSession() async {
     _sessionPin ??= lastVerifiedOperationPin;
     if (_sessionPin == null) {
-      throw StateError('Для редактирования склада необходимо заново ввести пароль.');
+      throw StateError('Не удалось открыть автоматический сеанс изменения склада.');
     }
     if (!_sharedOnline) {
       throw StateError('Редактирование каталога требует связи с общей базой.');
@@ -121,7 +127,7 @@ class WarehouseController extends ChangeNotifier {
     final id = await _repository.addCategory(name);
     categories = await _repository.getCategories();
     notifyListeners();
-    await _syncCatalogIfAuthorized();
+    unawaited(_syncCatalogIfAuthorized());
     return id;
   }
 
@@ -145,7 +151,7 @@ class WarehouseController extends ChangeNotifier {
       stockUnit: stockUnit,
     );
     await _reloadAfterMutation();
-    await _syncCatalogIfAuthorized();
+    unawaited(_syncCatalogIfAuthorized());
   }
 
   Future<void> updateProduct({
@@ -166,7 +172,7 @@ class WarehouseController extends ChangeNotifier {
       stockUnit: stockUnit,
     );
     await _reloadAfterMutation();
-    await _syncCatalogIfAuthorized();
+    unawaited(_syncCatalogIfAuthorized());
   }
 
   Future<void> updateProductControl({
@@ -439,21 +445,21 @@ class WarehouseController extends ChangeNotifier {
     }
     final draft = await _repository.createStocktakeDraft(employeeName);
     await _reloadDrafts();
-    await _syncDraftBestEffort(draft.id);
+    unawaited(_syncDraftBestEffort(draft.id));
     return draft;
   }
 
   Future<StocktakeDraft> resumeStocktakeDraft(int draftId) async {
     final draft = await _repository.resumeStocktakeDraft(draftId);
     await _reloadDrafts();
-    await _syncDraftBestEffort(draftId);
+    unawaited(_syncDraftBestEffort(draftId));
     return draft;
   }
 
   Future<void> pauseStocktakeDraft(int draftId, int activeSeconds) async {
     await _repository.pauseStocktakeDraft(draftId, activeSeconds);
     await _reloadDrafts();
-    await _syncDraftBestEffort(draftId);
+    unawaited(_syncDraftBestEffort(draftId));
   }
 
   Future<void> saveStocktakeActiveSeconds(int draftId, int activeSeconds) async {
@@ -629,8 +635,12 @@ class WarehouseController extends ChangeNotifier {
       ));
     }
     operations = rebuilt;
+    onSharedSnapshot(snapshot);
     notifyListeners();
   }
+
+  @protected
+  void onSharedSnapshot(Map<String, dynamic> snapshot) {}
 
   List<StockOperationLine> _operationLines(Object? value) {
     return _maps(value).map((line) {
@@ -748,8 +758,9 @@ class WarehouseController extends ChangeNotifier {
   }
 
   String _requireSessionPin() {
-    final pin = _sessionPin;
-    if (pin == null) throw StateError('Сеанс защищённой операции завершён. Введите пароль ещё раз.');
+    final pin = _sessionPin ?? lastVerifiedOperationPin;
+    if (pin == null || pin.isEmpty) throw StateError('Не удалось открыть автоматический сеанс операции.');
+    _sessionPin ??= pin;
     return pin;
   }
 
