@@ -15,6 +15,9 @@ Product? findProductByCode(Iterable<Product> products, String rawValue) {
   return null;
 }
 
+String get productCodeScanActionLabel =>
+    Platform.isAndroid || Platform.isIOS ? 'Сканировать камерой' : 'Сканировать сканером';
+
 Future<String?> scanProductCode(BuildContext context) async {
   if (Platform.isAndroid || Platform.isIOS) {
     return Navigator.of(context).push<String>(
