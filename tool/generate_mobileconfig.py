@@ -6,7 +6,11 @@ import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_URL = "https://mvnxfouyoynqyjdpcblh.supabase.co/functions/v1/bali-stock-ios-runtime"
+# Supabase deliberately serves HTML objects/Edge Function HTML responses as text/plain
+# with a sandbox CSP, which makes iOS WebClips display source code.  This immutable
+# HTML launcher is served with text/html and then loads the authoritative production
+# runtime from Supabase Storage as text into a browser Blob.
+DEFAULT_URL = "https://raw.githack.com/Nik13599/BALI-STOCK/777265e6a60fe643e358df16484c073f061bf93b/ios-web/iphone-launcher-v107.html"
 
 
 def main() -> None:
@@ -28,7 +32,7 @@ def main() -> None:
                 "IgnoreManifestScope": False,
                 "IsRemovable": True,
                 "Label": args.label,
-                "PayloadDescription": "Устанавливает production-версию BALI STOCK на экран Домой. Последующие обновления загружаются через стабильный Supabase runtime.",
+                "PayloadDescription": "Устанавливает BALI STOCK на экран Домой. Рабочие данные и production runtime загружаются из Supabase.",
                 "PayloadDisplayName": "BALI STOCK",
                 "PayloadIdentifier": "com.bali.stock.webclip",
                 "PayloadType": "com.apple.webClip.managed",
