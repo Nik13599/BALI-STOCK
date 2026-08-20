@@ -63,7 +63,7 @@ async function snapshot() {
     db.rpc("stock_purchase_suggestions"),
     db.rpc("stock_analytics_summary", { p_days: 30 }),
     db.from("stock_purchase_requests").select("id,supplier_id,status,created_by,comment,created_at,updated_at").order("created_at", { ascending: false }).limit(100),
-    db.from("stock_purchase_request_lines").select("id,request_id,product_key,suggested_quantity,requested_quantity,received_quantity,unit_cost,comment").order("id"),
+    db.from("stock_purchase_request_lines").select("id,request_id,product_key,suggested_quantity,requested_quantity,unit_cost,comment").order("id"),
     db.from("stock_catalog_audit").select("id,action,product_key,actor,before_data,after_data,created_at").order("created_at", { ascending: false }).limit(500),
   ]);
 
