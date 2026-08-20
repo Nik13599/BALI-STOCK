@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'data/offline_mutation_repository.dart';
@@ -56,26 +57,23 @@ class V14WarehouseController extends PersistentOfflineWarehouseController {
   Future<void> initialize() async {
     await _schema.ensureSchema();
     await _v14Cache.ensureSchema();
-    await super.initialize();
-
     final cached = await _v14Cache.loadSnapshot();
-    if (cached != null) _applyV14Snapshot(cached);
+    await super.initialize();
+    if (!sharedOnline && cached != null) _applyV14Snapshot(cached);
     await _applyPendingV14Meta();
-    await _loadV14SnapshotBestEffort();
   }
 
   @override
   Future<void> refresh() async {
     await super.refresh();
-    await _loadV14SnapshotBestEffort();
-    if (pendingSyncCount == 0) await _v14Cache.clearPending();
+    await _applyPendingV14Meta();
+    if (pendingSyncCount == 0) unawaited(_v14Cache.clearPending());
   }
 
   @override
-  Future<void> setOperationSessionPin(String pin) async {
+  Future<void> setOperationSessionPin(String pin) {
     _v14Pin = pin;
-    await super.setOperationSessionPin(pin);
-    await _loadV14SnapshotBestEffort();
+    return super.setOperationSessionPin(pin);
   }
 
   @override
@@ -85,9 +83,10 @@ class V14WarehouseController extends PersistentOfflineWarehouseController {
   }
 
   @override
-  Future<void> onAppResumed() async {
-    await super.onAppResumed();
-    await _loadV14SnapshotBestEffort();
+  void onSharedSnapshot(Map<String, dynamic> snapshot) {
+    _applyV14Snapshot(snapshot);
+    unawaited(_v14Cache.saveSnapshot(snapshot));
+    if (pendingSyncCount == 0) unawaited(_v14Cache.clearPending());
   }
 
   @override
@@ -146,7 +145,7 @@ class V14WarehouseController extends PersistentOfflineWarehouseController {
         }
       ],
     });
-    await refresh();
+    unawaited(refresh());
   }
 
   Future<void> saveProductSalesBatch({
@@ -179,7 +178,7 @@ class V14WarehouseController extends PersistentOfflineWarehouseController {
               })
           .toList(growable: false),
     });
-    await refresh();
+    unawaited(refresh());
   }
 
   Future<void> saveProductCatalogBatch({
@@ -214,7 +213,7 @@ class V14WarehouseController extends PersistentOfflineWarehouseController {
           .map((entry) => entry.value.toPayload(product: entry.key, oldProductKey: productKeyFor(entry.key)))
           .toList(growable: false),
     });
-    await refresh();
+    unawaited(refresh());
   }
 
   Future<void> uploadProductImage({
@@ -238,11 +237,8 @@ class V14WarehouseController extends PersistentOfflineWarehouseController {
     );
     final raw = response['snapshot'];
     if (raw is Map) {
-      final snapshot = raw.map((key, value) => MapEntry('$key', value));
-      _applyV14Snapshot(snapshot);
-      await _v14Cache.saveSnapshot(snapshot);
+      onSharedSnapshot(raw.map((key, value) => MapEntry('$key', value)));
     }
-    await super.refresh();
   }
 
   Future<int> spotStocktake({
@@ -277,7 +273,7 @@ class V14WarehouseController extends PersistentOfflineWarehouseController {
         'source': 'BALI STOCK V14',
       },
     });
-    await refresh();
+    unawaited(refresh());
     return operationId;
   }
 
@@ -296,17 +292,6 @@ class V14WarehouseController extends PersistentOfflineWarehouseController {
       if (line.productName.toLowerCase() == product.name.toLowerCase()) return line;
     }
     return null;
-  }
-
-  Future<void> _loadV14SnapshotBestEffort() async {
-    try {
-      final snapshot = await _v14Remote.fetchSnapshot();
-      _applyV14Snapshot(snapshot);
-      await _v14Cache.saveSnapshot(snapshot);
-      if (pendingSyncCount == 0) await _v14Cache.clearPending();
-    } catch (_) {
-      await _applyPendingV14Meta();
-    }
   }
 
   Future<void> _applyPendingV14Meta() async {
@@ -353,7 +338,8 @@ class V14WarehouseController extends PersistentOfflineWarehouseController {
 
   String _requireV14Pin() {
     final pin = _v14Pin ?? lastVerifiedOperationPin;
-    if (pin == null || pin.isEmpty) throw StateError('Введите PIN для защищённого действия.');
+    if (pin == null || pin.isEmpty) throw StateError('Не удалось открыть автоматический сеанс операции.');
+    _v14Pin ??= pin;
     return pin;
   }
 }

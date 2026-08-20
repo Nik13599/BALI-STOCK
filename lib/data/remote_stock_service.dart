@@ -35,7 +35,9 @@ class RemoteStockService {
   }
 
   Future<void> authorize(String _) async {
-    await post('', {'action': 'authorize'});
+    // The production client API authenticates every request with the embedded
+    // Supabase publishable app key. A separate authorize round-trip only adds
+    // latency and carries no additional authorization state.
   }
 
   Future<Map<String, dynamic>> syncCatalog({

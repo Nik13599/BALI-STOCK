@@ -31,6 +31,17 @@ void main() {
     expect(source.contains('Duration(seconds: 10)'), isTrue);
   });
 
+  test('authorization compatibility call no longer performs a network round trip', () {
+    final source = File('lib/data/remote_stock_service.dart').readAsStringSync();
+    final start = source.indexOf('Future<void> authorize(String _) async');
+    final next = source.indexOf('Future<Map<String, dynamic>> syncCatalog', start);
+    expect(start, greaterThanOrEqualTo(0));
+    expect(next, greaterThan(start));
+    final method = source.substring(start, next);
+    expect(method.contains("post('', {'action': 'authorize'})"), isFalse);
+    expect(method.contains('http.'), isFalse);
+  });
+
   test('primary section navigation paints before any operation-session network work', () {
     final source = File('lib/app.dart').readAsStringSync();
     final selectStart = source.indexOf('void _select(int index)');
@@ -45,6 +56,73 @@ void main() {
     expect(select.contains('setState(() => _selectedIndex = index);'), isTrue);
     expect(select.contains('addPostFrameCallback'), isTrue);
     expect(select.contains('unawaited(_prepareOperationSession())'), isTrue);
+  });
+
+  test('operation session is primed synchronously before background preparation', () {
+    final base = File('lib/controller.dart').readAsStringSync();
+    final offline = File('lib/offline_first_controller.dart').readAsStringSync();
+    expect(base.contains('void primeOperationSessionPin(String pin)'), isTrue);
+    expect(offline.contains('super.primeOperationSessionPin(pin);'), isTrue);
+    expect(offline.contains('unawaited(task.whenComplete(() => _sessionPreparation = null));'), isTrue);
+
+    final start = offline.indexOf('Future<void> setOperationSessionPin(String pin)');
+    final next = offline.indexOf('Future<void> _prepareOperationSession', start);
+    expect(start, greaterThanOrEqualTo(0));
+    expect(next, greaterThan(start));
+    final method = offline.substring(start, next);
+    expect(method.contains('await '), isFalse);
+    expect(method.contains('Future<void>.value()'), isTrue);
+  });
+
+  test('local durable mutations never wait for network flush before returning', () {
+    final source = File('lib/offline_first_controller.dart').readAsStringSync();
+    final start = source.indexOf('Future<void> _afterLocalMutation() async');
+    final next = source.indexOf('Future<void> _flushPendingBestEffort', start);
+    expect(start, greaterThanOrEqualTo(0));
+    expect(next, greaterThan(start));
+    final method = source.substring(start, next);
+    expect(method.contains('unawaited(_flushPendingBestEffort(refreshAfter: true));'), isTrue);
+    expect(method.contains('await _flushPendingBestEffort'), isFalse);
+  });
+
+  test('stocktake resume and pause do not wait for remote draft sync', () {
+    final source = File('lib/controller.dart').readAsStringSync();
+    final resumeStart = source.indexOf('Future<StocktakeDraft> resumeStocktakeDraft');
+    final pauseStart = source.indexOf('Future<void> pauseStocktakeDraft', resumeStart);
+    final secondsStart = source.indexOf('Future<void> saveStocktakeActiveSeconds', pauseStart);
+    expect(resumeStart, greaterThanOrEqualTo(0));
+    expect(pauseStart, greaterThan(resumeStart));
+    expect(secondsStart, greaterThan(pauseStart));
+    final resume = source.substring(resumeStart, pauseStart);
+    final pause = source.substring(pauseStart, secondsStart);
+    expect(resume.contains('unawaited(_syncDraftBestEffort(draftId));'), isTrue);
+    expect(pause.contains('unawaited(_syncDraftBestEffort(draftId));'), isTrue);
+  });
+
+  test('V14 hot-path actions do not block on a second full snapshot', () {
+    final source = File('lib/v14_controller.dart').readAsStringSync();
+    expect(source.contains('_loadV14SnapshotBestEffort'), isFalse);
+    expect(source.contains('void onSharedSnapshot(Map<String, dynamic> snapshot)'), isTrue);
+    expect(source.contains('unawaited(refresh());'), isTrue);
+
+    final start = source.indexOf('Future<void> setOperationSessionPin(String pin)');
+    final next = source.indexOf('void clearOperationSessionPin()', start);
+    expect(start, greaterThanOrEqualTo(0));
+    expect(next, greaterThan(start));
+    final method = source.substring(start, next);
+    expect(method.contains('fetchSnapshot'), isFalse);
+    expect(method.contains('_loadV14SnapshotBestEffort'), isFalse);
+  });
+
+  test('refresh keeps an already populated working screen visible', () {
+    final source = File('lib/controller.dart').readAsStringSync();
+    final start = source.indexOf('Future<void> refresh() async');
+    final next = source.indexOf('void primeOperationSessionPin', start);
+    expect(start, greaterThanOrEqualTo(0));
+    expect(next, greaterThan(start));
+    final method = source.substring(start, next);
+    expect(method.contains('final showBlockingLoader = products.isEmpty && categories.isEmpty && operations.isEmpty;'), isTrue);
+    expect(method.contains('if (showBlockingLoader)'), isTrue);
   });
 
   test('sync status updates do not rebuild the active working screen', () {
