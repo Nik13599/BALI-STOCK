@@ -30,10 +30,12 @@ void main() {
     expect(card.contains('Ввести нового поставщика вручную'), isTrue);
   });
 
-  test('iPhone V15 UI has the same compact card and settings gear', () {
-    final launcher = File('ios-web/launch-v15.html').readAsStringSync();
+  test('iPhone production bundle embeds the same compact card and settings gear', () {
+    final builder = File('tool/build_ios_production_runtime.py').readAsStringSync();
     final ui = File('ios-web/v15-ui.js').readAsStringSync();
-    expect(launcher.contains('v15-ui.js'), isTrue);
+
+    expect(builder.contains('"bali-v15-ui": ROOT / "ios-web" / "v15-ui.js"'), isTrue);
+    expect(builder.contains('"__BALI_STOCK_V15_UI__"'), isTrue);
     expect(ui.contains('__BALI_STOCK_V15_UI__'), isTrue);
     expect(ui.contains('v15Gear'), isTrue);
     expect(ui.contains('Настройки товара'), isTrue);
