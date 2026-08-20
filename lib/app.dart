@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -8,10 +10,10 @@ import 'screens/home_v14_screen.dart';
 import 'screens/purchase_screen.dart';
 import 'screens/stock_v14_screen.dart';
 import 'screens/stocktake_v2_screen.dart';
+import 'security.dart';
 import 'v14_controller.dart';
 import 'widgets/bali_nav_icon.dart';
 import 'widgets/common.dart';
-import 'widgets/pin_value_dialog.dart';
 
 class BaliStockApp extends StatelessWidget {
   const BaliStockApp({super.key, required this.controller});
@@ -105,20 +107,29 @@ class _BaliStockShellState extends State<BaliStockShell> with WidgetsBindingObse
     if (state == AppLifecycleState.resumed) widget.controller.onAppResumed();
   }
 
-  Future<void> _select(int index) async {
+  void _select(int index) {
     if (index == _selectedIndex) return;
+
+    // Navigation must never wait for Supabase/SQLite. Paint the selected
+    // section first, then refresh the automatic operation session in the
+    // background. This is especially important on Windows, where waiting for
+    // a full snapshot made Stocktake and Delivery feel unresponsive.
+    setState(() => _selectedIndex = index);
+
     if (index == 2 || index == 4) {
-      final pin = await showOperationPinValueDialog(context);
-      if (!mounted || pin == null) return;
-      try {
-        await widget.controller.setOperationSessionPin(pin);
-      } catch (e) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        showErrorSnack(context, e);
-        return;
-      }
+        unawaited(_prepareOperationSession());
+      });
     }
-    if (mounted) setState(() => _selectedIndex = index);
+  }
+
+  Future<void> _prepareOperationSession() async {
+    try {
+      await widget.controller.setOperationSessionPin(operationSessionCredential);
+    } catch (e) {
+      if (mounted) showErrorSnack(context, e);
+    }
   }
 
   Widget _page() {
@@ -148,7 +159,8 @@ class _BaliStockShellState extends State<BaliStockShell> with WidgetsBindingObse
   Widget _pageWithSyncStatus() {
     return AnimatedBuilder(
       animation: widget.controller,
-      builder: (context, _) {
+      child: _page(),
+      builder: (context, page) {
         final warning = widget.controller.syncWarning?.trim();
         final online = widget.controller.sharedOnline;
         final hasWarning = warning != null && warning.isNotEmpty;
@@ -186,7 +198,7 @@ class _BaliStockShellState extends State<BaliStockShell> with WidgetsBindingObse
                 ),
               ),
             ),
-            Expanded(child: _page()),
+            Expanded(child: page!),
           ],
         );
       },

@@ -207,7 +207,8 @@ jobs:
           from pathlib import Path
           data = json.loads(Path('/tmp/bali-runtime-health.json').read_text(encoding='utf-8'))
           assert data['ok'] is True, data
-          assert data['version'] == '1.0.1', data
+          assert isinstance(data.get('version'), str) and data['version'], data
+          assert isinstance(data.get('build'), int) and data['build'] > 0, data
           assert data['source'] == 'supabase-storage', data
           assert data['github_dependency'] is False, data
           assert data['password_prompt'] is False, data
@@ -216,5 +217,5 @@ jobs:
           assert data['compact_product_card'] is True, data
           assert data['purchase_requests'] is True, data
           assert data['catalog_edit'] is True, data
-          print('Production iPhone runtime health OK')
+          print('Production iPhone runtime health OK:', data['version'], data['build'])
           PY

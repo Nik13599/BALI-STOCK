@@ -30,4 +30,34 @@ void main() {
     expect(source.contains("endpoint?action=version"), isTrue);
     expect(source.contains('Duration(seconds: 10)'), isTrue);
   });
+
+  test('primary section navigation paints before any operation-session network work', () {
+    final source = File('lib/app.dart').readAsStringSync();
+    final selectStart = source.indexOf('void _select(int index)');
+    final prepareStart = source.indexOf('Future<void> _prepareOperationSession() async');
+    expect(selectStart, greaterThanOrEqualTo(0));
+    expect(prepareStart, greaterThan(selectStart));
+
+    final select = source.substring(selectStart, prepareStart);
+    expect(select.contains('await '), isFalse);
+    expect(select.contains('showOperationPinValueDialog'), isFalse);
+    expect(select.contains('setOperationSessionPin'), isFalse);
+    expect(select.contains('setState(() => _selectedIndex = index);'), isTrue);
+    expect(select.contains('addPostFrameCallback'), isTrue);
+    expect(select.contains('unawaited(_prepareOperationSession())'), isTrue);
+  });
+
+  test('sync status updates do not rebuild the active working screen', () {
+    final source = File('lib/app.dart').readAsStringSync();
+    final methodStart = source.indexOf('Widget _pageWithSyncStatus()');
+    final buildStart = source.indexOf('@override\n  Widget build(BuildContext context)', methodStart);
+    expect(methodStart, greaterThanOrEqualTo(0));
+    expect(buildStart, greaterThan(methodStart));
+
+    final method = source.substring(methodStart, buildStart);
+    expect(method.contains('child: _page(),'), isTrue);
+    expect(method.contains('builder: (context, page)'), isTrue);
+    expect(method.contains('Expanded(child: page!)'), isTrue);
+    expect(method.contains('Expanded(child: _page())'), isFalse);
+  });
 }
