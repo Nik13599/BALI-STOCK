@@ -64,8 +64,19 @@ void main() {
     expect(pages.contains('intentionally retired'), isTrue);
   });
 
-  test('password removal is an update of the production baseline', () {
+  test('password removal remains an update of the production baseline', () {
     final pubspec = File('pubspec.yaml').readAsStringSync();
-    expect(pubspec.contains('version: 1.0.1+101'), isTrue);
+    final match = RegExp(r'^version:\s*(\d+)\.(\d+)\.(\d+)\+(\d+)\s*$', multiLine: true).firstMatch(pubspec);
+    expect(match, isNotNull);
+
+    final major = int.parse(match!.group(1)!);
+    final minor = int.parse(match.group(2)!);
+    final patch = int.parse(match.group(3)!);
+    final build = int.parse(match.group(4)!);
+    final versionIsAtLeast101 = major > 1 ||
+        (major == 1 && (minor > 0 || (minor == 0 && patch >= 1)));
+
+    expect(versionIsAtLeast101, isTrue);
+    expect(build, greaterThanOrEqualTo(101));
   });
 }
