@@ -1,11 +1,11 @@
-# BALI STOCK 1.0.1
+# BALI STOCK 1.0.2
 
 Кроссплатформенное приложение складского учёта и переучёта для BALI.
 
 ## Платформы
 
-- Windows 10/11 x64 — полноценный установщик `.exe`.
-- Android — универсальный установочный `.apk`.
+- Windows 10/11 x64 — полноценный production-установщик `.exe`.
+- Android — production `.apk` с постоянной signing identity для обновлений поверх установленной версии.
 - iPhone/iPad — профиль `.mobileconfig`, который устанавливает BALI STOCK как Web Clip на экран Домой.
 - Native iOS Flutter build — формируется отдельно без подписи; для установки как обычного `.ipa` требуется Apple signing / provisioning profile.
 
@@ -21,25 +21,28 @@
 - История операций и история карточек/цен внутри раздела «Настройки / Контроль»; отдельной нижней вкладки «История» нет.
 - PDF текущих остатков и операций.
 - Общая Supabase-база и локальный SQLite-кэш для автономной работы Flutter-клиентов.
+- Пользовательские пароли/PIN не используются.
 - iPhone Web Clip использует стабильный Supabase runtime без зависимости от GitHub Pages/raw GitHub и имеет защитный fallback обновления складского снимка, чтобы отсутствие `snapshot()` не блокировало интерфейс.
 - Кастомные навигационные иконки используются в Flutter-клиентах и iPhone Web Clip.
 
-## Установщики
+## Production-установщики
 
-GitHub Actions workflow `Build BALI STOCK` формирует следующие артефакты:
+Workflow `Release BALI STOCK Production` формирует стабильные файлы:
 
-- `BALI-STOCK-Windows-Installer` → `BALI-STOCK-Windows-v14-Setup.exe`.
-- `BALI-STOCK-Android-Installer` → `BALI-STOCK-Android-v14.apk`.
-- `BALI-STOCK-iPhone-WebClip` → `BALI-STOCK-iPhone.mobileconfig`.
-- `BALI-STOCK-iOS-unsigned` → архив нативного `Runner.app` без Apple-подписи.
+- `BALI-STOCK-Windows-Setup.exe`
+- `BALI-STOCK-Android.apk`
+- `BALI-STOCK-iPhone.mobileconfig`
+- `BALI-STOCK-SHA256.txt`
+
+Обычный workflow `Build BALI STOCK` создаёт только CI-артефакты для проверки и не должен использоваться как production-канал установки.
 
 ### Windows
 
-Запустите `BALI-STOCK-Windows-v14-Setup.exe`. По умолчанию приложение устанавливается в профиль текущего пользователя и не требует установки Flutter или Visual C++ вручную.
+Запустите `BALI-STOCK-Windows-Setup.exe`. При следующем production-релизе новый Setup устанавливается поверх предыдущей версии благодаря постоянному AppId.
 
 ### Android
 
-Откройте `BALI-STOCK-Android-v14.apk` на устройстве и разрешите установку приложений из выбранного источника, если Android запросит это разрешение.
+Откройте `BALI-STOCK-Android.apk` на устройстве и разрешите установку приложений из выбранного источника, если Android запросит это разрешение. Начиная с production-базы 1.0.0 последующие APK подписываются той же production identity и устанавливаются поверх предыдущей production-версии.
 
 ### iPhone / iPad
 
@@ -47,18 +50,21 @@ GitHub Actions workflow `Build BALI STOCK` формирует следующие
 
 Повторно устанавливать профиль для обычных обновлений интерфейса не требуется: production runtime обновляется за тем же URL.
 
-## Проверка качества перед сборкой
+## Проверка качества перед release
 
-Релизный workflow обязательно выполняет:
+Production и PR-gate выполняют:
 
-1. `python tool/code_health_check.py --fail-on-orphans`
+1. `python tool/code_health_check.py --fail-on-orphans --fail-on-clones`
 2. `flutter analyze`
 3. `flutter test`
 4. release-сборки Android / Windows / iOS
+5. проверку постоянной Android production-подписи
+6. проверку iPhone runtime и всех встроенных JavaScript-блоков
+7. проверку отсутствия GitHub runtime-зависимости и пользовательских password/PIN flow
 
-Отдельный workflow `iPhone Runtime Smoke` проверяет production Web Clip, отсутствие GitHub runtime-зависимостей, навигацию, синтаксис встроенного JavaScript и регрессию, при которой `snapshot()` отсутствует в базовом iPhone runtime.
+Отдельные workflow `iPhone Runtime Smoke` и `iPhone Production Runtime Builder Smoke` проверяют production Web Clip, навигацию, синтаксис встроенного JavaScript, Supabase runtime и регрессию, при которой `snapshot()` отсутствует в базовом iPhone runtime.
 
-`tool/code_health_check.py` проверяет повторяющиеся импорты, последовательные дубли строк, хвостовые пробелы, дубли SKU в стартовом каталоге и Dart-файлы, которые больше не достижимы от `lib/main.dart`.
+`tool/code_health_check.py` проверяет повторяющиеся импорты, последовательные дубли строк, клоны крупных блоков, хвостовые пробелы, дубли SKU в стартовом каталоге и Dart-файлы, которые больше не достижимы от `lib/main.dart`.
 
 ## Основная структура
 
@@ -69,8 +75,9 @@ GitHub Actions workflow `Build BALI STOCK` формирует следующие
 - `lib/screens/` — рабочие экраны склада.
 - `ios-web/` — iPhone Web Clip UI и compatibility-модули.
 - `tool/generate_mobileconfig.py` — генератор iPhone-профиля.
+- `tool/build_ios_production_runtime.py` — сборка самодостаточного iPhone runtime.
 - `installer/windows/bali_stock.iss` — Windows installer definition.
 
 ## Версия
 
-Текущая версия приложения: `1.0.1+101`.
+Текущая release candidate: `1.0.2+102`.
