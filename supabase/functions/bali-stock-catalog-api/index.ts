@@ -8,12 +8,19 @@ const cors = {
 };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
   status,
-  headers: { ...cors, "Content-Type": "application/json" },
+  headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "no-store" },
 });
 
 const url = Deno.env.get("SUPABASE_URL")!;
 const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const db = createClient(url, serviceKey, { auth: { persistSession: false } });
+const CLIENT_KEY = "sb_publishable_Tq2niBP0_2KuzTEuip8Oeg_1HhCUo29";
+
+function requireClient(req: Request) {
+  const key = (req.headers.get("apikey") ?? "").trim();
+  if (!key) throw new Error("CLIENT_KEY_REQUIRED");
+  if (key !== CLIENT_KEY) throw new Error("CLIENT_KEY_INVALID");
+}
 
 function sanitizeCatalogItem(raw: any) {
   const item = { ...(raw ?? {}) };
@@ -44,6 +51,7 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ error: "POST_REQUIRED" }, 405);
   try {
+    requireClient(req);
     const body = await req.json().catch(() => ({}));
     const action = String(body.action ?? "");
 
@@ -108,6 +116,7 @@ Deno.serve(async (req) => {
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     console.error(message);
-    return json({ error: message }, 400);
+    const unauthorized = message === "CLIENT_KEY_REQUIRED" || message === "CLIENT_KEY_INVALID";
+    return json({ error: message }, unauthorized ? 401 : 400);
   }
 });
