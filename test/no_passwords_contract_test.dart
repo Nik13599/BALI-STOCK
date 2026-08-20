@@ -79,4 +79,19 @@ void main() {
     expect(versionIsAtLeast101, isTrue);
     expect(build, greaterThanOrEqualTo(101));
   });
+
+  test('legacy iPhone launchers never load BALI STOCK application code from GitHub', () {
+    const paths = [
+      'ios-web/index.html',
+      'ios-web/launch-v14-3.html',
+      'ios-web/launch-v15.html',
+      'ios-web/launch-v16.html',
+    ];
+    for (final path in paths) {
+      final source = File(path).readAsStringSync();
+      expect(source.contains('raw.githack.com/Nik13599/BALI-STOCK'), isFalse, reason: path);
+      expect(source.contains('raw.githubusercontent.com/Nik13599/BALI-STOCK'), isFalse, reason: path);
+      expect(source.contains('cdn.jsdelivr.net/gh/Nik13599/BALI-STOCK'), isFalse, reason: path);
+    }
+  });
 }
