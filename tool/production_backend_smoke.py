@@ -67,8 +67,11 @@ def main() -> None:
     status, catalog_unknown = request("/bali-stock-catalog-api", method="POST", key=True, body={"action": "unknown"})
     require(status == 400 and catalog_unknown.get("error") == "UNKNOWN_ACTION", f"catalog API contract failed: {status} {catalog_unknown}")
 
-    status, legacy = request("/bali-stock-api?action=snapshot&backend_smoke=1")
-    require(status == 200, f"legacy API snapshot failed: {status} {legacy}")
+    status, legacy_no_key = request("/bali-stock-api?action=snapshot&backend_smoke=1")
+    require(status == 401, f"legacy API must reject missing key: {status} {legacy_no_key}")
+
+    status, legacy = request("/bali-stock-api?action=snapshot&backend_smoke=1", key=True)
+    require(status == 200, f"legacy API snapshot with app key failed: {status} {legacy}")
     require(len(legacy.get("products") or []) == len(products), "legacy/client product count mismatch")
     require(int(legacy.get("version") or 0) == version, "legacy/client version mismatch")
 
@@ -76,6 +79,17 @@ def main() -> None:
         status, health = request(f"/{endpoint}?health=1&backend_smoke=1")
         require(status == 200 and health.get("ok") is True, f"{endpoint} health failed: {status} {health}")
         require(health.get("github_dependency") is False, f"{endpoint} still depends on GitHub: {health}")
+
+    retired = (
+        "bali-stock-publish-ios",
+        "bali-stock-publish-ios-runtime",
+        "bali-stock-host-test",
+        "bali-stock-ocr-test",
+        "bali-stock-invoice-view",
+    )
+    for endpoint in retired:
+        status, payload = request(f"/{endpoint}")
+        require(status == 410, f"retired endpoint {endpoint} is still active: {status} {payload}")
 
     print(json.dumps({
         "ok": True,
@@ -86,6 +100,7 @@ def main() -> None:
         "locations": len(locations),
         "operations": len(snapshot.get("operations") or []),
         "drafts": len(snapshot.get("drafts") or []),
+        "retired_endpoints": len(retired),
     }, ensure_ascii=False))
 
 
