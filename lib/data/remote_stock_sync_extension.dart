@@ -7,14 +7,13 @@ import 'remote_stock_service.dart';
 extension RemoteStockQueuedSync on RemoteStockService {
   static const syncEndpoint = 'https://mvnxfouyoynqyjdpcblh.supabase.co/functions/v1/bali-stock-sync-api';
 
-  Future<Map<String, dynamic>> postQueued(String pin, Map<String, dynamic> body) async {
+  Future<Map<String, dynamic>> postQueued(String _, Map<String, dynamic> body) async {
     final response = await http
         .post(
           Uri.parse(syncEndpoint),
           headers: {
             ...readHeaders,
             'Content-Type': 'application/json',
-            'x-bali-stock-pin': pin,
           },
           body: jsonEncode(body),
         )
