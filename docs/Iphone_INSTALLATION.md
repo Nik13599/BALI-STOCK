@@ -1,11 +1,31 @@
-# iPhone installation
+# BALI STOCK — установка на iPhone / iPad
 
-The `.mobileconfig` Web Clip approach is deprecated for BALI STOCK because it cannot reliably satisfy the required offline-first behavior.
+Основной production-вариант для iPhone и iPad — профиль `BALI-STOCK-iPhone.mobileconfig`.
 
-The supported iPhone target is the native Flutter iOS application. It stores its SQLite database locally and can operate without network access.
+Профиль добавляет BALI STOCK на экран «Домой» как полноэкранный Web Clip и открывает стабильный Supabase runtime:
 
-To install the native build on a physical iPhone, Apple code signing is required. The repository CI can create an unsigned `Runner.app`, but a real device install requires one of:
-- Apple Developer certificate + provisioning profile (recommended for stable internal distribution / TestFlight), or
-- local Xcode signing for a registered device.
+- адрес Web Clip не меняется между обновлениями;
+- актуальная версия интерфейса публикуется за этим адресом;
+- приложение не зависит от `raw.githubusercontent.com` или GitHub Pages во время запуска;
+- пользовательский пароль/PIN для обычного запуска не требуется;
+- нижняя навигация: «Главная → Склад → Переучёт → Закупки → Поставка → Настройки»;
+- история операций находится внутри раздела «Настройки», отдельной нижней вкладки «История» нет.
 
-Do not distribute future BALI STOCK releases as `.mobileconfig` Web Clips.
+## Установка Web Clip
+
+1. Получите артефакт `BALI-STOCK-iPhone-WebClip` из production-сборки.
+2. Откройте файл `BALI-STOCK-iPhone.mobileconfig` на iPhone/iPad.
+3. В iOS откройте загруженный профиль и подтвердите установку.
+4. Запустите появившийся значок `BALI STOCK` с экрана «Домой».
+
+При обновлениях приложения повторно устанавливать профиль обычно не требуется: Web Clip продолжает открывать тот же стабильный Supabase runtime.
+
+## Если приложение зависло на «Подключение…»
+
+Закройте Web Clip из переключателя приложений и откройте его снова. Runtime отдается без кэширования. В production-коде также есть резервное получение складского снимка через `bali-stock-client-api`, поэтому отсутствие базовой функции `snapshot()` не должно блокировать весь интерфейс.
+
+## Native iOS build
+
+Репозиторий также формирует нативный Flutter iOS build без подписи. Для установки `Runner.app`/`.ipa` на физическое устройство требуется Apple code signing: Apple Developer certificate + provisioning profile либо локальная подпись через Xcode.
+
+Native build является дополнительным вариантом. Production Web Clip через `.mobileconfig` остается поддерживаемым способом установки BALI STOCK на iPhone/iPad.
