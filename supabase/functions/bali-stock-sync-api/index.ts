@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-bali-stock-pin",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
@@ -23,6 +23,9 @@ function decodeBase64(value: string) {
 }
 function safeName(value: string) {
   return value.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 120) || "invoice";
+}
+function hasValidClientKey(req: Request) {
+  return (req.headers.get("apikey") ?? "").trim() === CLIENT_KEY;
 }
 async function currentSnapshot() {
   const r = await fetch(`${upstream}?action=snapshot`, {
@@ -49,6 +52,7 @@ async function forward(body: any) {
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  if (!hasValidClientKey(req)) return json({ error: "CLIENT_KEY_REQUIRED" }, 401);
   if (req.method !== "POST") return json({ error: "POST_REQUIRED" }, 405);
 
   let actionId = "";
@@ -79,8 +83,8 @@ Deno.serve(async (req: Request) => {
     }
     reserved = true;
 
-    // Password/PIN authentication is intentionally not used. The current app
-    // channel is authenticated by the BALI STOCK client key at client-api.
+    // Password/PIN authentication is intentionally not used. The app channel
+    // is authenticated by the same BALI STOCK publishable client key as client-api.
     const auth = await forward({ action: "authorize" });
     if (!auth.response.ok) {
       await db.from("stock_client_actions").delete().eq("action_id", actionId);
