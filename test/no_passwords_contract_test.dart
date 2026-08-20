@@ -28,6 +28,15 @@ void main() {
     expect(remote.contains("headers: {...readHeaders, 'Content-Type': 'application/json'}"), isTrue);
   });
 
+  test('offline queue sync is passwordless and forwards to client API', () {
+    final sync = File('supabase/functions/bali-stock-sync-api/index.ts').readAsStringSync();
+    expect(sync.contains('/functions/v1/bali-stock-client-api'), isTrue);
+    expect(sync.contains('/functions/v1/bali-stock-api'), isFalse);
+    expect(sync.contains('forward(pin'), isFalse);
+    expect(sync.contains('client_action_id'), isTrue);
+    expect(sync.contains('delivery_bundle'), isTrue);
+  });
+
   test('iPhone installation profile is independent from GitHub', () {
     final generator = File('tool/generate_mobileconfig.py').readAsStringSync();
     final smoke = File('.github/workflows/iphone-runtime-smoke.yml').readAsStringSync();
