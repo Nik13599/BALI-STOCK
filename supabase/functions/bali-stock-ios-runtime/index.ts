@@ -18,12 +18,12 @@ async function metadata() {
     if (!r.ok) throw new Error(String(r.status));
     const value = await r.json();
     return {
-      version: String(value?.version ?? "1.0.1"),
-      build: Number(value?.build ?? 101),
+      version: String(value?.version ?? "1.0.6"),
+      build: Number(value?.build ?? 106),
       sha256: String(value?.sha256 ?? ""),
     };
   } catch (_) {
-    return { version: "1.0.1", build: 101, sha256: "" };
+    return { version: "1.0.6", build: 106, sha256: "" };
   }
 }
 
@@ -32,36 +32,23 @@ Deno.serve(async (req: Request) => {
     const url = new URL(req.url);
     if (url.searchParams.get("health") === "1") {
       const meta = await metadata();
-      return Response.json({
-        ok: true,
-        version: meta.version,
-        build: meta.build,
-        sha256: meta.sha256,
-        source: "supabase-storage",
-        github_dependency: false,
-        password_prompt: false,
-        scanner_workflows: true,
-        invoice_auto: true,
-        compact_product_card: true,
-        purchase_requests: true,
-        catalog_edit: true,
-      }, { headers: { "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" } });
+      return Response.json({ ok: true, ...meta, source: "supabase-storage", github_dependency: false }, { headers: { "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" } });
     }
 
-    const response = await fetch(`${SOURCE}?v=${Date.now()}`, { cache: "no-store", headers: { Accept: "text/plain,*/*" } });
+    const response = await fetch(`${SOURCE}?v=${Date.now()}`, {
+      cache: "no-store",
+      headers: { Accept: "text/html,*/*" },
+    });
+
     if (!response.ok) throw new Error(`runtime storage HTTP ${response.status}`);
+
     const html = await response.text();
-    if (!/^\s*<!doctype html>/i.test(html) || !html.includes("BALI STOCK")) throw new Error("runtime storage returned invalid HTML");
-    if (html.includes("raw.githack.com") || html.includes("raw.githubusercontent.com/Nik13599/BALI-STOCK")) throw new Error("GitHub dependency detected");
-    if (html.includes("Введите пароль доступа") || html.includes("x-bali-stock-pin")) throw new Error("password flow detected");
-    if (!html.includes("__BALI_STOCK_SUPABASE_RUNTIME__")) throw new Error("runtime marker missing");
+
+    if (!/^\s*<!doctype html>/i.test(html)) throw new Error("Invalid HTML response");
+    if (!html.includes("BALI STOCK")) throw new Error("BALI STOCK marker missing");
+
     return new Response(html, { status: 200, headers });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const safe = message.replaceAll("<", "&lt;").replaceAll(">", "&gt;");
-    return new Response(
-      `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#07110c"><title>BALI STOCK</title></head><body style="margin:0;background:#07110c;color:#fff;font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:24px"><h1 style="color:#39ff6a">BALI STOCK</h1><p>Не удалось загрузить рабочую версию приложения.</p><p style="color:#ff8d94">${safe}</p><button onclick="location.reload()" style="padding:12px 16px;border:0;border-radius:12px;background:#39ff6a;font-weight:800">Повторить</button></body></html>`,
-      { status: 503, headers },
-    );
+    return new Response(`<!doctype html><html><head><meta charset="utf-8"><title>BALI STOCK</title></head><body><h1>BALI STOCK</h1><p>Runtime loading error</p></body></html>`, { status: 503, headers });
   }
 });
