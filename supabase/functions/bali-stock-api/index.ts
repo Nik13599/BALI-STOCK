@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-bali-stock-pin",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
@@ -17,6 +17,9 @@ const db = createClient(url, serviceKey, { auth: { persistSession: false } });
 const CLIENT_API = `${url}/functions/v1/bali-stock-client-api`;
 const CLIENT_KEY = "sb_publishable_Tq2niBP0_2KuzTEuip8Oeg_1HhCUo29";
 
+function hasValidClientKey(req: Request) {
+  return (req.headers.get("apikey") ?? "").trim() === CLIENT_KEY;
+}
 function publicProductImageUrl(path: string | null | undefined) {
   if (!path) return null;
   const { data } = db.storage.from("stock-product-images").getPublicUrl(path);
@@ -101,7 +104,7 @@ async function snapshot() {
   };
 }
 
-async function forwardToClientApi(req: Request, body: any) {
+async function forwardToClientApi(body: any) {
   const response = await fetch(CLIENT_API, {
     method: "POST",
     headers: {
@@ -123,6 +126,7 @@ async function forwardToClientApi(req: Request, body: any) {
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  if (!hasValidClientKey(req)) return json({ error: "CLIENT_KEY_REQUIRED" }, 401);
   try {
     const u = new URL(req.url);
     const body: any = req.method === "GET" ? {} : await req.json().catch(() => ({}));
@@ -146,7 +150,7 @@ Deno.serve(async (req: Request) => {
       return json(data ?? {});
     }
 
-    return forwardToClientApi(req, { ...body, action });
+    return forwardToClientApi({ ...body, action });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(message);
