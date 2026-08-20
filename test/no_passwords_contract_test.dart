@@ -30,11 +30,25 @@ void main() {
 
   test('offline queue sync is passwordless and forwards to client API', () {
     final sync = File('supabase/functions/bali-stock-sync-api/index.ts').readAsStringSync();
+    final client = File('lib/data/remote_stock_sync_extension.dart').readAsStringSync();
     expect(sync.contains('/functions/v1/bali-stock-client-api'), isTrue);
     expect(sync.contains('/functions/v1/bali-stock-api'), isFalse);
     expect(sync.contains('forward(pin'), isFalse);
     expect(sync.contains('client_action_id'), isTrue);
     expect(sync.contains('delivery_bundle'), isTrue);
+    expect(client.contains('x-bali-stock-pin'), isFalse);
+  });
+
+  test('legacy stock API is Supabase-only and contains no GitHub seed dependency', () {
+    final legacy = File('supabase/functions/bali-stock-api/index.ts').readAsStringSync();
+    expect(legacy.contains('raw.githubusercontent.com/Nik13599/BALI-STOCK'), isFalse);
+    expect(legacy.contains('raw.githack.com/Nik13599/BALI-STOCK'), isFalse);
+    expect(legacy.contains('cdn.jsdelivr.net/gh/Nik13599/BALI-STOCK'), isFalse);
+    expect(legacy.contains('/functions/v1/bali-stock-client-api'), isTrue);
+    expect(legacy.contains('stock_products'), isTrue);
+    expect(legacy.contains('stock_sync_state'), isTrue);
+    expect(legacy.contains('requirePin'), isFalse);
+    expect(legacy.contains('INVALID_PIN'), isFalse);
   });
 
   test('iPhone installation profile is independent from GitHub', () {
