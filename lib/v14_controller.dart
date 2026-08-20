@@ -83,9 +83,6 @@ class V14WarehouseController extends PersistentOfflineWarehouseController {
   }
 
   @override
-  Future<void> onAppResumed() => super.onAppResumed();
-
-  @override
   void onSharedSnapshot(Map<String, dynamic> snapshot) {
     _applyV14Snapshot(snapshot);
     unawaited(_v14Cache.saveSnapshot(snapshot));
