@@ -1,0 +1,32 @@
+name: Export BALI STOCK v1.0.1 Assets
+
+on:
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download published release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p export
+          gh release download v1.0.1 --dir export
+          ls -lah export
+          test -f export/BALI-STOCK-Windows-Setup.exe
+          test -f export/BALI-STOCK-Android.apk
+          test -f export/BALI-STOCK-iPhone.mobileconfig
+          test -f export/BALI-STOCK-SHA256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BALI-STOCK-1.0.1-PRODUCTION-ASSETS
+          path: export/*
+          if-no-files-found: error
+          retention-days: 7
