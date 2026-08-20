@@ -28,6 +28,8 @@ jobs:
         run: python tool/code_health_check.py --fail-on-orphans --fail-on-clones
       - run: flutter analyze
       - run: flutter test
+      - name: Verify live Supabase production backend without mutations
+        run: python tool/production_backend_smoke.py
 
   android:
     name: android-installer
