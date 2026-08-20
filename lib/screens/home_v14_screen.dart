@@ -82,16 +82,16 @@ class _HomeV14ScreenState extends State<HomeV14Screen> {
             children: [
               Text('Главная', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900)),
               const SizedBox(height: 6),
-              Text('Выберите товар: скан камерой, ввод кода товара или поиск по названию.', style: Theme.of(context).textTheme.bodyLarge),
+              Text('Выберите товар: скан кода, ручной ввод кода или поиск по названию.', style: Theme.of(context).textTheme.bodyLarge),
               const SizedBox(height: 18),
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
                   onPressed: _scan,
                   icon: const BaliNavIcon(kind: BaliNavIconKind.scan, active: true, size: 22),
-                  label: const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 5),
-                    child: Text('Сканировать камерой', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+                  label: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 5),
+                    child: Text(productCodeScanActionLabel, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
                   ),
                 ),
               ),
