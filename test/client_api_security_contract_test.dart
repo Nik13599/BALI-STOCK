@@ -35,4 +35,18 @@ void main() {
     expect(syncKey, isNotNull);
     expect(syncKey, clientKey);
   });
+
+  test('legacy stock API cannot bypass passwordless client-key validation', () {
+    final legacy = File('supabase/functions/bali-stock-api/index.ts').readAsStringSync();
+    final primaryClient = File('lib/data/remote_stock_service.dart').readAsStringSync();
+
+    expect(legacy.contains('function hasValidClientKey(req: Request)'), isTrue);
+    expect(legacy.contains('if (!hasValidClientKey(req)) return json({ error: "CLIENT_KEY_REQUIRED" }, 401);'), isTrue);
+    expect(legacy.contains('x-bali-stock-pin'), isFalse);
+
+    final legacyKey = RegExp(r'const CLIENT_KEY = "([^"]+)";').firstMatch(legacy)?.group(1);
+    final clientKey = RegExp(r"static const _publishableKey = '([^']+)';").firstMatch(primaryClient)?.group(1);
+    expect(legacyKey, isNotNull);
+    expect(legacyKey, clientKey);
+  });
 }
