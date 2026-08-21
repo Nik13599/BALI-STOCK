@@ -108,11 +108,21 @@ void main() {
   test('iPhone production runtime smoke verifies scanner workflows after Supabase assembly', () {
     final runtimeHost = File('supabase/functions/bali-stock-ios-runtime/index.ts').readAsStringSync();
     final smoke = File('.github/workflows/iphone-runtime-smoke.yml').readAsStringSync();
+    final scannerCompat = File('ios-web/ios-scanner-compat.js').readAsStringSync();
+    final builder = File('tool/build_ios_production_runtime.py').readAsStringSync();
 
-    expect(runtimeHost.contains('source: "supabase-storage"'), isTrue);
-    expect(runtimeHost.contains('github_dependency: false'), isTrue);
+    expect(runtimeHost.contains('source: "github-pages"'), isTrue);
+    expect(runtimeHost.contains('camera_safe_origin: true'), isTrue);
+    expect(runtimeHost.contains('blob_launcher: false'), isTrue);
     expect(runtimeHost.contains('password_prompt: false'), isTrue);
+    expect(scannerCompat.contains('__BALI_STOCK_IOS_SCANNER_COMPAT__'), isTrue);
+    expect(scannerCompat.contains("input.setAttribute('capture', 'environment')"), isTrue);
+    expect(scannerCompat.contains('scanner.scanFile(file, true)'), isTrue);
+    expect(scannerCompat.contains('navigator.mediaDevices.getUserMedia'), isTrue);
+    expect(builder.contains('SCANNER_LIBRARY_SHA256'), isTrue);
+    expect(builder.contains('inline_scanner_library(html)'), isTrue);
     expect(smoke.contains('__BALI_V14_SCAN_WORKFLOWS__'), isTrue);
+    expect(smoke.contains('__BALI_STOCK_IOS_SCANNER_COMPAT__'), isTrue);
     expect(smoke.contains('СОХРАНИТЬ → СЛЕДУЮЩИЙ СКАН'), isTrue);
     expect(smoke.contains('Закупочная цена обязательна для каждой позиции поставки.'), isTrue);
     expect(smoke.contains('Parse every production runtime inline JavaScript block'), isTrue);

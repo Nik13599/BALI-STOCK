@@ -10,6 +10,7 @@ on:
 permissions:
   contents: write
   id-token: write
+  pages: write
 
 concurrency:
   group: bali-stock-production-release
@@ -20,7 +21,7 @@ jobs:
     name: production-quality
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -47,7 +48,7 @@ jobs:
     needs: quality
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -163,7 +164,7 @@ jobs:
           cp build/app/outputs/flutter-apk/app-release.apk dist/android/BALI-STOCK-Android.apk
           "$apksigner" verify --print-certs dist/android/BALI-STOCK-Android.apk > dist/android/BALI-STOCK-Android-Signing.txt
           grep -qi '95345c6b0eacfbae8e102f1b056e626edffcc41a2c84655c6ac86ba725bc274f' <(tr -d ':' < dist/android/BALI-STOCK-Android-Signing.txt)
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: production-android
           path: dist/android/*
@@ -174,7 +175,7 @@ jobs:
     needs: quality
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -197,7 +198,7 @@ jobs:
           & $iscc "/DMyAppVersion=$version" "/DMyOutputBaseFilename=BALI-STOCK-Windows-Setup" "installer/windows/bali_stock.iss"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (-not (Test-Path 'dist/windows/BALI-STOCK-Windows-Setup.exe')) { throw "Setup EXE was not created" }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: production-windows
           path: dist/windows/BALI-STOCK-Windows-Setup.exe
@@ -211,7 +212,7 @@ jobs:
       RUNTIME_PUBLISHER: https://mvnxfouyoynqyjdpcblh.supabase.co/functions/v1/bali-stock-runtime-publisher
       RUNTIME_URL: https://mvnxfouyoynqyjdpcblh.supabase.co/functions/v1/bali-stock-ios-runtime
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Generate iPhone profile
         run: python tool/generate_mobileconfig.py
       - name: Build self-contained iPhone production runtime
@@ -223,17 +224,19 @@ jobs:
           import re
           from pathlib import Path
 
-          expected = 'https://mvnxfouyoynqyjdpcblh.supabase.co/functions/v1/bali-stock-ios-runtime'
+          expected = 'https://nik13599.github.io/BALI-STOCK/'
           with Path('dist/ios/BALI-STOCK-iPhone.mobileconfig').open('rb') as f:
               profile = plistlib.load(f)
           clip = profile['PayloadContent'][0]
           assert clip['PayloadType'] == 'com.apple.webClip.managed'
           assert clip['URL'] == expected
-          assert 'github' not in clip['URL'].lower()
+          assert clip['FullScreen'] is True
           assert clip['Icon']
 
           html = Path('dist/ios-runtime/bali-stock.html').read_text(encoding='utf-8')
-          forbidden = ['raw.githack.com', 'raw.githubusercontent.com/Nik13599/BALI-STOCK', 'Введите пароль доступа', 'Пароль не введён', 'Неверный пароль', 'x-bali-stock-pin']
+          required = ['__BALI_STOCK_IOS_SCANNER_COMPAT__', '__BALI_STOCK_IOS_RUNTIME_PERFORMANCE__', 'bali-html5-qrcode-v238', 'СФОТОГРАФИРОВАТЬ КОД', 'baliPollSnapshotVersion']
+          assert not [value for value in required if value not in html]
+          forbidden = ['raw.githack.com', 'raw.githubusercontent.com/Nik13599/BALI-STOCK', 'cdn.jsdelivr.net/npm/html5-qrcode', 'Введите пароль доступа', 'Пароль не введён', 'Неверный пароль', 'x-bali-stock-pin']
           assert not [value for value in forbidden if value in html]
           scripts = re.findall(r'<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)</script>', html, flags=re.I)
           for index, script in enumerate(scripts):
@@ -298,31 +301,85 @@ jobs:
           assert health['ok'] is True, health
           assert health['version'] == expected_version, health
           assert int(health['build']) == expected_build, health
-          assert health['github_dependency'] is False, health
+          assert health['web_app'] == 'https://nik13599.github.io/BALI-STOCK/', health
+          assert health['camera_safe_origin'] is True, health
+          assert health['blob_launcher'] is False, health
           assert health['password_prompt'] is False, health
           print('Published iPhone runtime health OK:', health)
           PY
-      - uses: actions/upload-artifact@v4
+      - name: Prepare camera-safe GitHub Pages document
+        run: |
+          mkdir -p dist/pages
+          cp dist/ios-runtime/bali-stock.html dist/pages/index.html
+          touch dist/pages/.nojekyll
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist/pages
+      - uses: actions/upload-artifact@v7
         with:
           name: production-iphone
           path: dist/ios/BALI-STOCK-iPhone.mobileconfig
           if-no-files-found: error
 
+  iphone_pages:
+    name: deploy-iphone-camera-safe-web-app
+    needs: iphone
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy iPhone runtime to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
+      - name: Verify deployed HTTPS document and camera runtime
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          python - <<'PY'
+          import os
+          import time
+          import urllib.request
+
+          url = os.environ['PAGE_URL'] + '?release=' + os.environ['GITHUB_RUN_ID']
+          for attempt in range(8):
+              try:
+                  request = urllib.request.Request(url, headers={'Cache-Control': 'no-cache'})
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      content_type = response.headers.get('Content-Type', '')
+                      html = response.read().decode('utf-8')
+                  assert content_type.lower().startswith('text/html'), content_type
+                  assert html.lstrip().lower().startswith('<!doctype html>')
+                  assert '__BALI_STOCK_IOS_SCANNER_COMPAT__' in html
+                  assert '__BALI_STOCK_IOS_RUNTIME_PERFORMANCE__' in html
+                  assert 'bali-html5-qrcode-v238' in html
+                  assert 'blob:' not in html
+                  print('GitHub Pages iPhone runtime OK:', url, content_type, len(html))
+                  break
+              except Exception:
+                  if attempt == 7:
+                      raise
+                  time.sleep(5)
+          PY
+
   publish:
     name: publish-production-release
-    needs: [quality, android, windows, iphone]
+    needs: [quality, android, windows, iphone, iphone_pages]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           name: production-android
           path: release
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: production-windows
           path: release
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: production-iphone
           path: release
@@ -348,7 +405,7 @@ jobs:
           GitHub source repository may remain private.
           Windows: install BALI-STOCK-Windows-Setup.exe over the previous production version.
           Android: install BALI-STOCK-Android.apk over the previous production version; the signing identity is preserved through GitHub OIDC.
-          iPhone: install BALI-STOCK-iPhone.mobileconfig once. Later application updates are published behind the same stable Supabase runtime URL.
+          iPhone: install BALI-STOCK-iPhone.mobileconfig once. It opens the camera-safe HTTPS runtime at https://nik13599.github.io/BALI-STOCK/.
           EOF
       - name: Publish or update GitHub release
         env:

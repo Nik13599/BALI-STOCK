@@ -13,7 +13,7 @@ jobs:
   build-runtime:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Compile and run runtime builder
         run: |
           python -m py_compile tool/build_ios_production_runtime.py
@@ -34,6 +34,11 @@ jobs:
               '__BALI_STOCK_V15_DELIVERY_LINK__',
               '__BALI_STOCK_V15_COMPAT__',
               '__BALI_STOCK_V16_CATALOG_HISTORY__',
+              '__BALI_STOCK_IOS_SCANNER_COMPAT__',
+              '__BALI_STOCK_IOS_RUNTIME_PERFORMANCE__',
+              'bali-html5-qrcode-v238',
+              'СФОТОГРАФИРОВАТЬ КОД',
+              'baliPollSnapshotVersion',
           ]
           forbidden = [
               'raw.githack.com',
@@ -42,6 +47,7 @@ jobs:
               'Пароль не введён',
               'Неверный пароль',
               'x-bali-stock-pin',
+              'cdn.jsdelivr.net/npm/html5-qrcode',
           ]
           missing = [value for value in required if value not in html]
           found = [value for value in forbidden if value in html]

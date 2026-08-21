@@ -75,7 +75,7 @@ class OfflineFirstWarehouseController extends WarehouseController {
       syncWarning = _pendingMessage();
       notifyListeners();
     }
-    _offlinePollTimer = Timer.periodic(const Duration(seconds: 4), (_) => _backgroundTick());
+    _offlinePollTimer = Timer.periodic(const Duration(seconds: 15), (_) => _backgroundTick());
   }
 
   @override

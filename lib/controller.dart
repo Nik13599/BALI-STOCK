@@ -59,7 +59,7 @@ class WarehouseController extends ChangeNotifier {
   Future<void> initialize() async {
     await _loadLocal();
     await _pullRemote(silent: true);
-    _pollTimer = Timer.periodic(const Duration(seconds: 3), (_) => _pollRemote());
+    _pollTimer = Timer.periodic(const Duration(seconds: 15), (_) => _pollRemote());
   }
 
   Future<void> refresh() async {

@@ -38,7 +38,9 @@ def require(condition: bool, message: str) -> None:
 def main() -> None:
     status, runtime = request("/bali-stock-ios-runtime?health=1&backend_smoke=1")
     require(status == 200 and runtime.get("ok") is True, f"runtime health failed: {status} {runtime}")
-    require(runtime.get("github_dependency") is False, f"runtime still depends on GitHub: {runtime}")
+    require(runtime.get("web_app") == "https://nik13599.github.io/BALI-STOCK/", f"unexpected iPhone page: {runtime}")
+    require(runtime.get("camera_safe_origin") is True, f"runtime is not camera-safe: {runtime}")
+    require(runtime.get("blob_launcher") is False, f"runtime still uses a Blob launcher: {runtime}")
     require(runtime.get("password_prompt") is False, f"runtime password flow returned: {runtime}")
 
     status, snapshot = request("/bali-stock-client-api?action=snapshot&backend_smoke=1", key=True)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import re
 import urllib.request
 from pathlib import Path
@@ -8,6 +9,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_URL = "https://mvnxfouyoynqyjdpcblh.supabase.co/functions/v1/bali-stock-ios-runtime"
 RUNTIME_SOURCE_URL = "https://mvnxfouyoynqyjdpcblh.supabase.co/storage/v1/object/public/bali-stock-runtime/production/bali-stock.html"
+SCANNER_LIBRARY_URL = "https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"
+SCANNER_LIBRARY_SHA256 = "660b12437b1d747e3e68b8be0685c08cb728140110ad213f167b14b66f8b1d8e"
+SCANNER_COMPAT_MODULE = ROOT / "ios-web" / "ios-scanner-compat.js"
+PERFORMANCE_MODULE = ROOT / "ios-web" / "ios-runtime-performance.js"
 MOBILE_STOCKTAKE_MODULE = ROOT / "ios-web" / "mobile-stocktake-compact-v105.js"
 MODULES = {
     "bali-v15-ui": ROOT / "ios-web" / "v15-ui.js",
@@ -35,6 +40,19 @@ def fetch_current_runtime() -> str:
     return raw.decode("utf-8")
 
 
+def fetch_scanner_library() -> str:
+    request = urllib.request.Request(
+        SCANNER_LIBRARY_URL,
+        headers={"Accept": "application/javascript,*/*", "Cache-Control": "no-cache"},
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        raw = response.read()
+    digest = hashlib.sha256(raw).hexdigest()
+    if digest != SCANNER_LIBRARY_SHA256:
+        raise SystemExit(f"html5-qrcode checksum mismatch: {digest}")
+    return raw.decode("utf-8")
+
+
 def embed_script(html: str, script_id: str, source: str) -> str:
     safe = source.replace("</script", "<\\/script")
     replacement = f'<script id="{script_id}">{safe}</script>'
@@ -42,6 +60,46 @@ def embed_script(html: str, script_id: str, source: str) -> str:
     updated, count = pattern.subn(lambda _: replacement, html, count=1)
     if count != 1:
         raise SystemExit(f"Embedded script not found exactly once: {script_id} ({count})")
+    return updated
+
+
+def inline_scanner_library(html: str) -> str:
+    source = fetch_scanner_library().replace("</script", "<\\/script")
+    replacement = f'<script id="bali-html5-qrcode-v238">{source}</script>'
+    pattern = re.compile(
+        r'<script\s+src=["\']https://cdn\.jsdelivr\.net/npm/html5-qrcode@2\.3\.8/html5-qrcode\.min\.js["\'][^>]*>\s*</script>',
+        re.I,
+    )
+    updated, count = pattern.subn(lambda _: replacement, html, count=1)
+    if count != 1:
+        raise SystemExit(f"html5-qrcode external script not found exactly once ({count})")
+    return updated
+
+
+def append_script(html: str, script_id: str, source: str) -> str:
+    safe = source.replace("</script", "<\\/script")
+    script = f'<script id="{script_id}">{safe}</script>'
+    html = re.sub(
+        rf'<script\s+id=["\']{re.escape(script_id)}["\'][^>]*>[\s\S]*?</script>',
+        "",
+        html,
+        count=1,
+        flags=re.I,
+    )
+    if "</body>" not in html:
+        raise SystemExit("Runtime body closing tag is missing")
+    return html.replace("</body>", script + "</body>", 1)
+
+
+def harden_runtime_polling(html: str) -> str:
+    pattern = re.compile(r"setInterval\(\(\)=>snapshot\(\)\.catch\(\(\)=>\{\}\),5000\)")
+    replacement = (
+        "setInterval(()=>{if(typeof window.baliPollSnapshotVersion==='function')"
+        "window.baliPollSnapshotVersion();else if(!document.hidden)snapshot().catch(()=>{})},15000)"
+    )
+    updated, count = pattern.subn(replacement, html, count=1)
+    if count != 1:
+        raise SystemExit(f"Legacy full-snapshot polling loop not found exactly once ({count})")
     return updated
 
 
@@ -58,10 +116,11 @@ def main() -> None:
     for script_id, path in MODULES.items():
         html = embed_script(html, script_id, path.read_text(encoding="utf-8"))
 
-    mobile_source = MOBILE_STOCKTAKE_MODULE.read_text(encoding="utf-8").replace("</script", "<\\/script")
-    mobile_script = f'<script id="bali-mobile-stocktake-compact-v105">{mobile_source}</script>'
-    html = re.sub(r'<script\s+id=["\']bali-mobile-stocktake-compact-v105["\'][^>]*>[\s\S]*?</script>', '', html, count=1, flags=re.I)
-    html = html.replace("</body>", mobile_script + "</body>", 1)
+    html = harden_runtime_polling(html)
+    html = inline_scanner_library(html)
+    html = append_script(html, "bali-ios-runtime-performance", PERFORMANCE_MODULE.read_text(encoding="utf-8"))
+    html = append_script(html, "bali-ios-scanner-compat", SCANNER_COMPAT_MODULE.read_text(encoding="utf-8"))
+    html = append_script(html, "bali-mobile-stocktake-compact-v105", MOBILE_STOCKTAKE_MODULE.read_text(encoding="utf-8"))
 
     html = re.sub(
         r"window\.__BALI_STOCK_SUPABASE_RUNTIME__\s*=\s*['\"][^'\"]+['\"]\s*;",
@@ -81,7 +140,10 @@ def main() -> None:
         "__BALI_STOCK_V15_DELIVERY_LINK__",
         "__BALI_STOCK_V15_COMPAT__",
         "__BALI_STOCK_V16_CATALOG_HISTORY__",
+        "__BALI_STOCK_IOS_SCANNER_COMPAT__",
+        "__BALI_STOCK_IOS_RUNTIME_PERFORMANCE__",
         "__BALI_STOCK_MOBILE_STOCKTAKE_COMPACT__",
+        "bali-html5-qrcode-v238",
     ]
     missing = [value for value in required if value not in html]
     if missing:
@@ -94,6 +156,7 @@ def main() -> None:
         "Пароль не введён",
         "Неверный пароль",
         "x-bali-stock-pin",
+        "cdn.jsdelivr.net/npm/html5-qrcode",
     ]
     found = [value for value in forbidden if value in html]
     if found:

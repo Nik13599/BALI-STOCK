@@ -2,7 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 const ROOT = "https://mvnxfouyoynqyjdpcblh.supabase.co/storage/v1/object/public/bali-stock-runtime";
 const META = `${ROOT}/production/metadata.json`;
-const LAUNCHER = "https://raw.githack.com/Nik13599/BALI-STOCK/777265e6a60fe643e358df16484c073f061bf93b/ios-web/iphone-launcher-v107.html";
+const WEB_APP = "https://nik13599.github.io/BALI-STOCK/";
 
 async function metadata() {
   try {
@@ -27,10 +27,12 @@ Deno.serve(async (req: Request) => {
     return Response.json({
       ok: true,
       ...meta,
-      source: "supabase-storage",
-      transport: "http-redirect-html-launcher",
-      launcher: LAUNCHER,
-      github_dependency: false,
+      source: "github-pages",
+      transport: "https-redirect",
+      web_app: WEB_APP,
+      github_dependency: true,
+      camera_safe_origin: true,
+      blob_launcher: false,
       password_prompt: false,
       scanner_workflows: true,
       invoice_auto: true,
@@ -46,13 +48,12 @@ Deno.serve(async (req: Request) => {
   }
 
   // Supabase Gateway rewrites HTML responses to text/plain with a sandbox CSP.
-  // iOS then shows the HTML source. Redirecting to a real text/html launcher
-  // avoids the gateway sanitizer; the launcher then loads the authoritative
-  // production runtime from Supabase Storage as text and opens it as an HTML Blob.
+  // Redirect to the camera-safe HTTPS document used by the current profile.
+  // This also keeps previously installed profiles functional without a Blob URL.
   return new Response(null, {
     status: 302,
     headers: {
-      "Location": LAUNCHER,
+      "Location": WEB_APP,
       "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
       "Pragma": "no-cache",
       "Expires": "0",

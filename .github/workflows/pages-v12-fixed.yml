@@ -1,13 +1,37 @@
-name: Retired BALI STOCK GitHub Pages
+name: Recover BALI STOCK iPhone Web App
 
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: bali-stock-iphone-pages
+  cancel-in-progress: false
+
 jobs:
-  retired:
+  deploy:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: GitHub Pages channel retired
+      - uses: actions/checkout@v7
+      - name: Build current iPhone runtime
         run: |
-          echo "BALI STOCK iPhone production is hosted by the stable Supabase runtime."
-          echo "GitHub Pages is intentionally retired and must not publish the application."
+          python tool/build_ios_production_runtime.py --output dist/pages/index.html
+          touch dist/pages/.nojekyll
+      - name: Validate camera-safe document
+        run: |
+          grep -q '__BALI_STOCK_IOS_SCANNER_COMPAT__' dist/pages/index.html
+          grep -q 'bali-html5-qrcode-v238' dist/pages/index.html
+          ! grep -q 'cdn.jsdelivr.net/npm/html5-qrcode' dist/pages/index.html
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist/pages
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
