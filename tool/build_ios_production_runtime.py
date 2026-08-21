@@ -6,6 +6,8 @@ import re
 import urllib.request
 from pathlib import Path
 
+from visual_contract_check import VISUAL_CONTRACT, verify_visual_contract
+
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_URL = "https://mvnxfouyoynqyjdpcblh.supabase.co/functions/v1/bali-stock-ios-runtime"
 RUNTIME_SOURCE_URL = "https://mvnxfouyoynqyjdpcblh.supabase.co/storage/v1/object/public/bali-stock-runtime/production/bali-stock.html"
@@ -91,6 +93,10 @@ def append_script(html: str, script_id: str, source: str) -> str:
     return html.replace("</body>", script + "</body>", 1)
 
 
+def visual_shell(html: str) -> str:
+    return re.sub(r"<script\b[^>]*>[\s\S]*?</script>", "", html, flags=re.I)
+
+
 def harden_runtime_polling(html: str) -> str:
     pattern = re.compile(r"setInterval\(\(\)=>snapshot\(\)\.catch\(\(\)=>\{\}\),5000\)")
     replacement = (
@@ -108,10 +114,13 @@ def main() -> None:
     parser.add_argument("--output", default="dist/ios-runtime/bali-stock.html")
     args = parser.parse_args()
 
+    verify_visual_contract()
     version, build = read_version()
     html = fetch_current_runtime()
     if not re.match(r"^\s*<!doctype html>", html, re.I) or "BALI STOCK" not in html:
         raise SystemExit("Current Supabase runtime is invalid")
+
+    original_visual_shell = visual_shell(html)
 
     for script_id, path in MODULES.items():
         html = embed_script(html, script_id, path.read_text(encoding="utf-8"))
@@ -128,13 +137,18 @@ def main() -> None:
         html,
         count=1,
     )
-    release_marker = f"<script>window.__BALI_STOCK_RELEASE_VERSION__='{version}';window.__BALI_STOCK_RELEASE_BUILD__={build};</script>"
+    release_marker = (
+        f"<script>window.__BALI_STOCK_RELEASE_VERSION__='{version}';"
+        f"window.__BALI_STOCK_RELEASE_BUILD__={build};"
+        f"window.__BALI_STOCK_VISUAL_CONTRACT__='{VISUAL_CONTRACT}';</script>"
+    )
     html = re.sub(r"<script>window\.__BALI_STOCK_RELEASE_VERSION__=[\s\S]*?</script>", "", html, count=1)
     html = html.replace("</body>", release_marker + "</body>", 1)
 
     required = [
         "__BALI_STOCK_SUPABASE_RUNTIME__",
         "__BALI_STOCK_RELEASE_VERSION__",
+        "__BALI_STOCK_VISUAL_CONTRACT__",
         "bali-stock-client-api",
         "__BALI_STOCK_V15_UI__",
         "__BALI_STOCK_V15_DELIVERY_LINK__",
@@ -161,6 +175,9 @@ def main() -> None:
     found = [value for value in forbidden if value in html]
     if found:
         raise SystemExit(f"Forbidden runtime content remains: {found}")
+
+    if visual_shell(html) != original_visual_shell:
+        raise SystemExit("iPhone visual shell changed while applying technical runtime fixes")
 
     output = ROOT / args.output
     output.parent.mkdir(parents=True, exist_ok=True)

@@ -29,6 +29,7 @@ jobs:
       - run: flutter create . --project-name bali_stock --org com.bali.stock --platforms=android,ios,windows
       - run: flutter pub get
       - run: python tool/code_health_check.py --fail-on-orphans --fail-on-clones
+      - run: python tool/visual_contract_check.py
       - run: flutter analyze
       - run: flutter test
       - name: Validate production version
@@ -224,17 +225,17 @@ jobs:
           import re
           from pathlib import Path
 
-          expected = 'https://nik13599.github.io/BALI-STOCK/'
+          expected = 'https://mvnxfouyoynqyjdpcblh.supabase.co/functions/v1/bali-stock-ios-runtime'
           with Path('dist/ios/BALI-STOCK-iPhone.mobileconfig').open('rb') as f:
               profile = plistlib.load(f)
           clip = profile['PayloadContent'][0]
           assert clip['PayloadType'] == 'com.apple.webClip.managed'
           assert clip['URL'] == expected
           assert clip['FullScreen'] is True
-          assert clip['Icon']
+          assert clip['Icon'] == Path('assets/branding/bali_stock_logo.png').read_bytes()
 
           html = Path('dist/ios-runtime/bali-stock.html').read_text(encoding='utf-8')
-          required = ['__BALI_STOCK_IOS_SCANNER_COMPAT__', '__BALI_STOCK_IOS_RUNTIME_PERFORMANCE__', 'bali-html5-qrcode-v238', 'СФОТОГРАФИРОВАТЬ КОД', 'baliPollSnapshotVersion']
+          required = ['__BALI_STOCK_IOS_SCANNER_COMPAT__', '__BALI_STOCK_IOS_RUNTIME_PERFORMANCE__', '__BALI_STOCK_VISUAL_CONTRACT__', 'bali-html5-qrcode-v238', "input.setAttribute('capture', 'environment')", 'baliPollSnapshotVersion']
           assert not [value for value in required if value not in html]
           forbidden = ['raw.githack.com', 'raw.githubusercontent.com/Nik13599/BALI-STOCK', 'cdn.jsdelivr.net/npm/html5-qrcode', 'Введите пароль доступа', 'Пароль не введён', 'Неверный пароль', 'x-bali-stock-pin']
           assert not [value for value in forbidden if value in html]
@@ -243,6 +244,7 @@ jobs:
               Path(f'/tmp/bali-release-inline-{index}.js').write_text(script, encoding='utf-8')
           print('iPhone production runtime validated; inline scripts:', len(scripts))
           PY
+          python tool/visual_contract_check.py --mobileconfig dist/ios/BALI-STOCK-iPhone.mobileconfig
           for file in /tmp/bali-release-inline-*.js; do node --check "$file"; done
       - name: Publish iPhone runtime to Supabase using GitHub OIDC
         run: |
@@ -302,8 +304,8 @@ jobs:
           assert health['version'] == expected_version, health
           assert int(health['build']) == expected_build, health
           assert health['web_app'] == 'https://nik13599.github.io/BALI-STOCK/', health
-          assert health['camera_safe_origin'] is True, health
-          assert health['blob_launcher'] is False, health
+          assert health['interface_guard'] is True, health
+          assert health['active_target'], health
           assert health['password_prompt'] is False, health
           print('Published iPhone runtime health OK:', health)
           PY
@@ -355,6 +357,7 @@ jobs:
                   assert html.lstrip().lower().startswith('<!doctype html>')
                   assert '__BALI_STOCK_IOS_SCANNER_COMPAT__' in html
                   assert '__BALI_STOCK_IOS_RUNTIME_PERFORMANCE__' in html
+                  assert '__BALI_STOCK_VISUAL_CONTRACT__' in html
                   assert 'bali-html5-qrcode-v238' in html
                   assert 'blob:' not in html
                   print('GitHub Pages iPhone runtime OK:', url, content_type, len(html))
@@ -405,7 +408,7 @@ jobs:
           GitHub source repository may remain private.
           Windows: install BALI-STOCK-Windows-Setup.exe over the previous production version.
           Android: install BALI-STOCK-Android.apk over the previous production version; the signing identity is preserved through GitHub OIDC.
-          iPhone: install BALI-STOCK-iPhone.mobileconfig once. It opens the camera-safe HTTPS runtime at https://nik13599.github.io/BALI-STOCK/.
+          iPhone: install BALI-STOCK-iPhone.mobileconfig once. Its stable Supabase URL preserves the original icon and interface and selects only a verified camera-safe runtime.
           EOF
       - name: Publish or update GitHub release
         env:

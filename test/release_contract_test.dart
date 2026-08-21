@@ -57,19 +57,19 @@ void main() {
     expect(history.contains('operation, required this.onPdf, required this.onOpen, required this.onDelete'), isFalse);
   });
 
-  test('iPhone production profile uses a top-level camera-safe HTTPS document', () {
+  test('iPhone production profile preserves the stable URL and original interface', () {
     final generator = File('tool/generate_mobileconfig.py').readAsStringSync();
     final catalog = File('ios-web/v16-catalog-history.js').readAsStringSync();
     final ui = File('ios-web/v15-ui.js').readAsStringSync();
     final delivery = File('ios-web/v15-delivery-link.js').readAsStringSync();
     final smoke = File('.github/workflows/iphone-runtime-smoke.yml').readAsStringSync();
 
-    expect(generator.contains('https://nik13599.github.io/BALI-STOCK/'), isTrue);
+    expect(generator.contains('supabase.co/functions/v1/bali-stock-ios-runtime'), isTrue);
     expect(generator.contains('raw.githack.com'), isFalse);
     expect(generator.contains('raw.githubusercontent.com'), isFalse);
     expect(generator.contains('production-версию BALI STOCK'), isTrue);
-    expect(smoke.contains("assert data['camera_safe_origin'] is True"), isTrue);
-    expect(smoke.contains("assert data['blob_launcher'] is False"), isTrue);
+    expect(smoke.contains("assert clip['Icon'] == Path('assets/branding/bali_stock_logo.png').read_bytes()"), isTrue);
+    expect(smoke.contains("assert data['interface_guard'] is True"), isTrue);
     expect(smoke.contains("assert data['password_prompt'] is False"), isTrue);
     expect(catalog.contains('__BALI_STOCK_V16_CATALOG_HISTORY__'), isTrue);
     expect(catalog.contains('ДОБАВИТЬ НОВЫЙ ТОВАР'), isTrue);

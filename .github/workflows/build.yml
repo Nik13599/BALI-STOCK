@@ -26,6 +26,7 @@ jobs:
       - run: flutter pub get
       - name: Check duplicate lines, code clones, dead files and whitespace
         run: python tool/code_health_check.py --fail-on-orphans --fail-on-clones
+      - run: python tool/visual_contract_check.py
       - run: flutter analyze
       - run: flutter test
       - name: Verify live Supabase production backend without mutations
@@ -183,12 +184,13 @@ jobs:
           assert profile['PayloadType'] == 'Configuration'
           clip = profile['PayloadContent'][0]
           assert clip['PayloadType'] == 'com.apple.webClip.managed'
-          expected = 'https://nik13599.github.io/BALI-STOCK/'
+          expected = 'https://mvnxfouyoynqyjdpcblh.supabase.co/functions/v1/bali-stock-ios-runtime'
           assert clip['URL'] == expected, clip['URL']
           assert clip['FullScreen'] is True
-          assert clip['Icon']
-          print('mobileconfig camera-safe production runtime OK:', clip['URL'])
+          assert clip['Icon'] == Path('assets/branding/bali_stock_logo.png').read_bytes()
+          print('mobileconfig stable Supabase runtime and original icon OK:', clip['URL'])
           PY
+          python tool/visual_contract_check.py --mobileconfig dist/ios/BALI-STOCK-iPhone.mobileconfig
       - uses: actions/upload-artifact@v7
         with:
           name: BALI-STOCK-iPhone-WebClip-CI

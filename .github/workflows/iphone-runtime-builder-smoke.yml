@@ -29,6 +29,7 @@ jobs:
           required = [
               '__BALI_STOCK_SUPABASE_RUNTIME__',
               '__BALI_STOCK_RELEASE_VERSION__',
+              '__BALI_STOCK_VISUAL_CONTRACT__',
               'bali-stock-client-api',
               '__BALI_STOCK_V15_UI__',
               '__BALI_STOCK_V15_DELIVERY_LINK__',
@@ -37,7 +38,7 @@ jobs:
               '__BALI_STOCK_IOS_SCANNER_COMPAT__',
               '__BALI_STOCK_IOS_RUNTIME_PERFORMANCE__',
               'bali-html5-qrcode-v238',
-              'СФОТОГРАФИРОВАТЬ КОД',
+              "input.setAttribute('capture', 'environment')",
               'baliPollSnapshotVersion',
           ]
           forbidden = [

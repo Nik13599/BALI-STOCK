@@ -111,16 +111,19 @@ void main() {
     final scannerCompat = File('ios-web/ios-scanner-compat.js').readAsStringSync();
     final builder = File('tool/build_ios_production_runtime.py').readAsStringSync();
 
-    expect(runtimeHost.contains('source: "github-pages"'), isTrue);
-    expect(runtimeHost.contains('camera_safe_origin: true'), isTrue);
-    expect(runtimeHost.contains('blob_launcher: false'), isTrue);
+    expect(runtimeHost.contains('LEGACY_LAUNCHER'), isTrue);
+    expect(runtimeHost.contains('__BALI_STOCK_VISUAL_CONTRACT__'), isTrue);
+    expect(runtimeHost.contains('interface_guard: true'), isTrue);
     expect(runtimeHost.contains('password_prompt: false'), isTrue);
     expect(scannerCompat.contains('__BALI_STOCK_IOS_SCANNER_COMPAT__'), isTrue);
     expect(scannerCompat.contains("input.setAttribute('capture', 'environment')"), isTrue);
     expect(scannerCompat.contains('scanner.scanFile(file, true)'), isTrue);
+    expect(scannerCompat.contains('input.click()'), isTrue);
+    expect(scannerCompat.contains('data-bali-scanner-for'), isFalse);
     expect(scannerCompat.contains('navigator.mediaDevices.getUserMedia'), isTrue);
     expect(builder.contains('SCANNER_LIBRARY_SHA256'), isTrue);
     expect(builder.contains('inline_scanner_library(html)'), isTrue);
+    expect(builder.contains('visual_shell(html) != original_visual_shell'), isTrue);
     expect(smoke.contains('__BALI_V14_SCAN_WORKFLOWS__'), isTrue);
     expect(smoke.contains('__BALI_STOCK_IOS_SCANNER_COMPAT__'), isTrue);
     expect(smoke.contains('СОХРАНИТЬ → СЛЕДУЮЩИЙ СКАН'), isTrue);

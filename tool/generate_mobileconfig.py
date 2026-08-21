@@ -6,7 +6,7 @@ import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_URL = "https://nik13599.github.io/BALI-STOCK/"
+DEFAULT_URL = "https://mvnxfouyoynqyjdpcblh.supabase.co/functions/v1/bali-stock-ios-runtime"
 
 
 def main() -> None:
@@ -28,7 +28,7 @@ def main() -> None:
                 "IgnoreManifestScope": False,
                 "IsRemovable": True,
                 "Label": args.label,
-                "PayloadDescription": "Устанавливает production-версию BALI STOCK на экран Домой. Приложение открывается как обычная защищённая HTTPS-страница с доступом к камере, а рабочие данные загружаются из Supabase.",
+                "PayloadDescription": "Устанавливает production-версию BALI STOCK на экран Домой. Стабильный Supabase URL перенаправляет iPhone на исполняемый HTML-launcher, а рабочий runtime и данные загружаются из Supabase.",
                 "PayloadDisplayName": "BALI STOCK",
                 "PayloadIdentifier": "com.bali.stock.webclip",
                 "PayloadType": "com.apple.webClip.managed",

@@ -51,16 +51,16 @@ void main() {
     expect(legacy.contains('INVALID_PIN'), isFalse);
   });
 
-  test('iPhone installation profile opens the camera-safe Pages document directly', () {
+  test('iPhone installation profile keeps the production URL and visual contract', () {
     final generator = File('tool/generate_mobileconfig.py').readAsStringSync();
     final smoke = File('.github/workflows/iphone-runtime-smoke.yml').readAsStringSync();
 
-    expect(generator.contains('https://nik13599.github.io/BALI-STOCK/'), isTrue);
+    expect(generator.contains('/functions/v1/bali-stock-ios-runtime'), isTrue);
     expect(generator.contains('raw.githack.com'), isFalse);
     expect(generator.contains('raw.githubusercontent.com'), isFalse);
     expect(smoke.contains("assert clip['FullScreen'] is True"), isTrue);
-    expect(smoke.contains("assert data['camera_safe_origin'] is True"), isTrue);
-    expect(smoke.contains("assert data['blob_launcher'] is False"), isTrue);
+    expect(smoke.contains("assert clip['Icon'] == Path('assets/branding/bali_stock_logo.png').read_bytes()"), isTrue);
+    expect(smoke.contains("assert data['interface_guard'] is True"), isTrue);
     expect(smoke.contains("assert data['password_prompt'] is False"), isTrue);
   });
 
@@ -79,6 +79,7 @@ void main() {
     expect(runtimeBuilder.contains('raw.githubusercontent.com/Nik13599/BALI-STOCK'), isTrue); // forbidden-content check only
     expect(runtimeBuilder.contains('RUNTIME_URL = "https://mvnxfouyoynqyjdpcblh.supabase.co/functions/v1/bali-stock-ios-runtime"'), isTrue);
     expect(runtimeBuilder.contains('SCANNER_LIBRARY_SHA256'), isTrue);
+    expect(runtimeBuilder.contains('__BALI_STOCK_VISUAL_CONTRACT__'), isTrue);
   });
 
   test('GitHub Pages recovery channel deploys the camera-safe runtime', () {
