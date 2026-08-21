@@ -27,9 +27,11 @@ jobs:
       - name: Validate camera-safe document
         run: |
           grep -q '__BALI_STOCK_IOS_SCANNER_COMPAT__' dist/pages/index.html
+          grep -q '__BALI_STOCK_IOS_LIVE_SCANNER__' dist/pages/index.html
           grep -q '__BALI_STOCK_VISUAL_CONTRACT__' dist/pages/index.html
           grep -q 'bali-html5-qrcode-v238' dist/pages/index.html
           ! grep -q 'cdn.jsdelivr.net/npm/html5-qrcode' dist/pages/index.html
+          ! grep -q "input.setAttribute('capture', 'environment')" dist/pages/index.html
       - uses: actions/upload-pages-artifact@v5
         with:
           path: dist/pages

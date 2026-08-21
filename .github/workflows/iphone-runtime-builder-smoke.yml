@@ -17,6 +17,7 @@ jobs:
       - name: Compile and run runtime builder
         run: |
           python -m py_compile tool/build_ios_production_runtime.py
+          node tool/test_ios_live_scanner.js
           python tool/build_ios_production_runtime.py --output /tmp/bali-stock-next.html
           test -s /tmp/bali-stock-next.html
       - name: Validate dry-run runtime
@@ -36,9 +37,12 @@ jobs:
               '__BALI_STOCK_V15_COMPAT__',
               '__BALI_STOCK_V16_CATALOG_HISTORY__',
               '__BALI_STOCK_IOS_SCANNER_COMPAT__',
+              '__BALI_STOCK_IOS_LIVE_SCANNER__',
+              'formats.EAN_13',
+              'config.fps = Math.max(15',
+              "focusMode: 'continuous'",
               '__BALI_STOCK_IOS_RUNTIME_PERFORMANCE__',
               'bali-html5-qrcode-v238',
-              "input.setAttribute('capture', 'environment')",
               'baliPollSnapshotVersion',
           ]
           forbidden = [
@@ -49,6 +53,8 @@ jobs:
               'Неверный пароль',
               'x-bali-stock-pin',
               'cdn.jsdelivr.net/npm/html5-qrcode',
+              "input.setAttribute('capture', 'environment')",
+              'scanner.scanFile(file, true)',
           ]
           missing = [value for value in required if value not in html]
           found = [value for value in forbidden if value in html]

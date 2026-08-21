@@ -116,9 +116,12 @@ void main() {
     expect(runtimeHost.contains('interface_guard: true'), isTrue);
     expect(runtimeHost.contains('password_prompt: false'), isTrue);
     expect(scannerCompat.contains('__BALI_STOCK_IOS_SCANNER_COMPAT__'), isTrue);
-    expect(scannerCompat.contains("input.setAttribute('capture', 'environment')"), isTrue);
-    expect(scannerCompat.contains('scanner.scanFile(file, true)'), isTrue);
-    expect(scannerCompat.contains('input.click()'), isTrue);
+    expect(scannerCompat.contains('__BALI_STOCK_IOS_LIVE_SCANNER__'), isTrue);
+    expect(scannerCompat.contains("input.setAttribute('capture', 'environment')"), isFalse);
+    expect(scannerCompat.contains('scanner.scanFile(file, true)'), isFalse);
+    expect(scannerCompat.contains('config.fps = Math.max(15'), isTrue);
+    expect(scannerCompat.contains('formats.EAN_13'), isTrue);
+    expect(scannerCompat.contains("focusMode: 'continuous'"), isTrue);
     expect(scannerCompat.contains('data-bali-scanner-for'), isFalse);
     expect(scannerCompat.contains('navigator.mediaDevices.getUserMedia'), isTrue);
     expect(builder.contains('SCANNER_LIBRARY_SHA256'), isTrue);
@@ -126,6 +129,7 @@ void main() {
     expect(builder.contains('visual_shell(html) != original_visual_shell'), isTrue);
     expect(smoke.contains('__BALI_V14_SCAN_WORKFLOWS__'), isTrue);
     expect(smoke.contains('__BALI_STOCK_IOS_SCANNER_COMPAT__'), isTrue);
+    expect(smoke.contains('__BALI_STOCK_IOS_LIVE_SCANNER__'), isTrue);
     expect(smoke.contains('СОХРАНИТЬ → СЛЕДУЮЩИЙ СКАН'), isTrue);
     expect(smoke.contains('Закупочная цена обязательна для каждой позиции поставки.'), isTrue);
     expect(smoke.contains('Parse every production runtime inline JavaScript block'), isTrue);
