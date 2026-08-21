@@ -6,7 +6,8 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-RUNTIME_URL = "https://mvnxfouyoynqyjdpcblh.supabase.co/storage/v1/object/public/bali-stock-runtime/production/bali-stock.html"
+RUNTIME_URL = "https://mvnxfouyoynqyjdpcblh.supabase.co/functions/v1/bali-stock-ios-runtime"
+RUNTIME_SOURCE_URL = "https://mvnxfouyoynqyjdpcblh.supabase.co/storage/v1/object/public/bali-stock-runtime/production/bali-stock.html"
 MOBILE_STOCKTAKE_MODULE = ROOT / "ios-web" / "mobile-stocktake-compact-v105.js"
 MODULES = {
     "bali-v15-ui": ROOT / "ios-web" / "v15-ui.js",
@@ -26,7 +27,7 @@ def read_version() -> tuple[str, int]:
 
 def fetch_current_runtime() -> str:
     request = urllib.request.Request(
-        RUNTIME_URL + "?builder=1",
+        RUNTIME_SOURCE_URL + "?builder=1",
         headers={"Accept": "text/html,*/*", "Cache-Control": "no-cache"},
     )
     with urllib.request.urlopen(request, timeout=30) as response:
