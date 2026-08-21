@@ -7,6 +7,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_URL = "https://mvnxfouyoynqyjdpcblh.supabase.co/functions/v1/bali-stock-ios-runtime"
+RUNTIME_SOURCE_URL = "https://mvnxfouyoynqyjdpcblh.supabase.co/storage/v1/object/public/bali-stock-runtime/production/bali-stock.html"
+MOBILE_STOCKTAKE_MODULE = ROOT / "ios-web" / "mobile-stocktake-compact-v105.js"
 MODULES = {
     "bali-v15-ui": ROOT / "ios-web" / "v15-ui.js",
     "bali-v15-delivery-link": ROOT / "ios-web" / "v15-delivery-link.js",
@@ -25,7 +27,7 @@ def read_version() -> tuple[str, int]:
 
 def fetch_current_runtime() -> str:
     request = urllib.request.Request(
-        RUNTIME_URL + "?builder=1",
+        RUNTIME_SOURCE_URL + "?builder=1",
         headers={"Accept": "text/html,*/*", "Cache-Control": "no-cache"},
     )
     with urllib.request.urlopen(request, timeout=30) as response:
@@ -56,6 +58,11 @@ def main() -> None:
     for script_id, path in MODULES.items():
         html = embed_script(html, script_id, path.read_text(encoding="utf-8"))
 
+    mobile_source = MOBILE_STOCKTAKE_MODULE.read_text(encoding="utf-8").replace("</script", "<\\/script")
+    mobile_script = f'<script id="bali-mobile-stocktake-compact-v105">{mobile_source}</script>'
+    html = re.sub(r'<script\s+id=["\']bali-mobile-stocktake-compact-v105["\'][^>]*>[\s\S]*?</script>', '', html, count=1, flags=re.I)
+    html = html.replace("</body>", mobile_script + "</body>", 1)
+
     html = re.sub(
         r"window\.__BALI_STOCK_SUPABASE_RUNTIME__\s*=\s*['\"][^'\"]+['\"]\s*;",
         f"window.__BALI_STOCK_SUPABASE_RUNTIME__='{version}';",
@@ -74,6 +81,7 @@ def main() -> None:
         "__BALI_STOCK_V15_DELIVERY_LINK__",
         "__BALI_STOCK_V15_COMPAT__",
         "__BALI_STOCK_V16_CATALOG_HISTORY__",
+        "__BALI_STOCK_MOBILE_STOCKTAKE_COMPACT__",
     ]
     missing = [value for value in required if value not in html]
     if missing:

@@ -1,8 +1,7 @@
 name: bali_stock
 description: BALI STOCK — складской учет и полный переучет продукции ночного клуба.
 publish_to: "none"
-version: 1.0.4+104
-
+version: 1.0.5+105
 environment:
   sdk: ">=3.12.0 <4.0.0"
 
