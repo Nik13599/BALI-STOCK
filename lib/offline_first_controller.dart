@@ -38,6 +38,7 @@ class OfflineFirstWarehouseController extends WarehouseController {
   final RemoteSyncRepository _draftReader;
 
   Timer? _offlinePollTimer;
+  final Map<int, Timer> _draftQueueTimers = {};
   String? _syncPin;
   bool _syncing = false;
   bool _polling = false;
@@ -301,9 +302,50 @@ class OfflineFirstWarehouseController extends WarehouseController {
   }
 
   @override
+  Future<void> updateProductControl({
+    required Product product,
+    required String employee,
+    required int minimumAmount,
+    required int targetAmount,
+    required int varianceRecheckAmount,
+    String? barcode,
+    double? defaultCost,
+    String costCurrency = 'BYN',
+  }) async {
+    _requireLocalPin();
+    await _local.updateProductControlCache(
+      productId: product.id,
+      minimumAmount: minimumAmount,
+      targetAmount: targetAmount,
+      varianceRecheckAmount: varianceRecheckAmount,
+      barcode: barcode,
+    );
+    final productKey = SyncPayloadBuilder.productKey(
+      name: product.name,
+      unit: product.stockUnit,
+      packageSize: product.packageSize,
+    );
+    await _offline.enqueueLatest(
+      'product_meta',
+      {
+        'action': 'product_meta',
+        'employee': employee.trim(),
+        'product_key': productKey,
+        'minimum_amount': minimumAmount,
+        'target_amount': targetAmount,
+        'variance_recheck_amount': varianceRecheckAmount,
+        'barcode': barcode?.trim().isEmpty == true ? null : barcode?.trim(),
+      },
+      coalesceKey: 'product_meta:$productKey',
+    );
+    await _afterLocalMutation();
+  }
+
+  @override
   Future<StocktakeDraft> createStocktakeDraft(String employeeName) async {
     _requireLocalPin();
     final draft = await _local.createStocktakeDraft(employeeName);
+    await _queueDraftSnapshot(draft);
     await _reloadLocalOffline();
     return draft;
   }
@@ -312,6 +354,7 @@ class OfflineFirstWarehouseController extends WarehouseController {
   Future<StocktakeDraft> resumeStocktakeDraft(int draftId) async {
     _requireLocalPin();
     final draft = await _local.resumeStocktakeDraft(draftId);
+    await _queueDraftSnapshot(draft);
     await _reloadLocalOffline();
     return draft;
   }
@@ -320,20 +363,50 @@ class OfflineFirstWarehouseController extends WarehouseController {
   Future<void> pauseStocktakeDraft(int draftId, int activeSeconds) async {
     _requireLocalPin();
     await _local.pauseStocktakeDraft(draftId, activeSeconds);
+    _draftQueueTimers.remove(draftId)?.cancel();
+    await _queueDraftById(draftId);
     await _reloadLocalOffline();
+  }
+
+  @override
+  Future<void> saveStocktakeActiveSeconds(int draftId, int activeSeconds) async {
+    _requireLocalPin();
+    await _local.saveStocktakeActiveSeconds(draftId, activeSeconds);
+    _scheduleDraftQueue(draftId);
+  }
+
+  @override
+  Future<void> saveStocktakeDraftLine({
+    required int draftId,
+    required int productId,
+    required int? wholePackages,
+    required int? extraAmount,
+  }) async {
+    _requireLocalPin();
+    await _local.saveStocktakeDraftLine(
+      draftId: draftId,
+      productId: productId,
+      wholePackages: wholePackages,
+      extraAmount: extraAmount,
+    );
+    _scheduleDraftQueue(draftId);
   }
 
   @override
   Future<void> deleteStocktakeDraft(int draftId) async {
     _requireLocalPin();
     final draft = await _draftReader.readDraft(draftId);
+    _draftQueueTimers.remove(draftId)?.cancel();
     await _local.deleteStocktakeDraft(draftId);
-    await _offline.enqueue(
+    final key = _draftCoalesceKey(draft);
+    await _offline.removeCoalesced('draft_sync', key);
+    await _offline.enqueueLatest(
       'draft_delete',
       SyncPayloadBuilder.draftDelete(
         draft.employeeName,
         startedAt: draft.startedAt,
       ),
+      coalesceKey: key,
     );
     await _afterLocalMutation();
   }
@@ -359,14 +432,18 @@ class OfflineFirstWarehouseController extends WarehouseController {
       recheckedProductIds: recheckedProductIds,
       signaturePoints: signaturePoints,
     );
+    _draftQueueTimers.remove(draftId)?.cancel();
     final operationId = await _local.completeStocktakeDraft(draftId, activeSeconds);
+    final key = _draftCoalesceKey(draft);
+    await _offline.removeCoalesced('draft_sync', key);
     await _offline.enqueue('stocktake', payload);
-    await _offline.enqueue(
+    await _offline.enqueueLatest(
       'draft_delete',
       SyncPayloadBuilder.draftDelete(
         draft.employeeName,
         startedAt: draft.startedAt,
       ),
+      coalesceKey: key,
     );
     await _afterLocalMutation();
     return operationId;
@@ -449,6 +526,39 @@ class OfflineFirstWarehouseController extends WarehouseController {
     unawaited(_flushPendingBestEffort(refreshAfter: true));
   }
 
+  Future<void> _queueDraftById(int draftId) async {
+    final draft = await _draftReader.readDraft(draftId);
+    await _queueDraftSnapshot(draft);
+  }
+
+  void _scheduleDraftQueue(int draftId) {
+    _draftQueueTimers.remove(draftId)?.cancel();
+    _draftQueueTimers[draftId] = Timer(const Duration(milliseconds: 600), () async {
+      _draftQueueTimers.remove(draftId);
+      try {
+        await _queueDraftById(draftId);
+      } catch (_) {
+        // The SQLite draft remains authoritative and will be queued on pause,
+        // resume or the next edit if the app lifecycle changed mid-debounce.
+      }
+    });
+  }
+
+  Future<void> _queueDraftSnapshot(StocktakeDraft draft) async {
+    await _offline.enqueueLatest(
+      'draft_sync',
+      SyncPayloadBuilder.draftSync(draft),
+      coalesceKey: _draftCoalesceKey(draft),
+    );
+    _pendingSyncCount = await _offline.pendingCount();
+    syncWarning = _pendingMessage();
+    notifyListeners();
+    unawaited(_flushPendingBestEffort(refreshAfter: true));
+  }
+
+  String _draftCoalesceKey(StocktakeDraft draft) =>
+      'draft:${draft.employeeName.trim().toLowerCase()}:${draft.startedAt.toUtc().toIso8601String()}';
+
   Future<void> _flushPendingBestEffort({bool refreshAfter = false}) async {
     if (_syncing) return;
     final pin = _syncPin ?? lastVerifiedOperationPin;
@@ -463,11 +573,18 @@ class OfflineFirstWarehouseController extends WarehouseController {
     _syncing = true;
     try {
       _offlineOnline = true;
+      Map<String, dynamic>? latestSnapshot;
       while (true) {
         final item = await _offline.nextPending();
         if (item == null) break;
         try {
-          await _remoteSync.postQueued(pin, item.payload);
+          final response = await _remoteSync.postQueued(pin, item.payload);
+          final rawSnapshot = response['snapshot'];
+          if (rawSnapshot is Map) {
+            latestSnapshot = rawSnapshot.map((key, value) => MapEntry('$key', value));
+          } else if (item.actionType != 'invoice_attachment_upload' && item.actionType != 'invoice_scan_save') {
+            throw StateError('Сервер подтвердил операцию без обновлённого состояния склада');
+          }
           await _offline.removePending(item.id);
         } catch (e) {
           await _offline.markFailed(item.id, e);
@@ -478,7 +595,11 @@ class OfflineFirstWarehouseController extends WarehouseController {
       _pendingSyncCount = await _offline.pendingCount();
       if (_pendingSyncCount == 0) {
         syncWarning = null;
-        if (refreshAfter) {
+        if (latestSnapshot != null) {
+          await applySharedSnapshot(latestSnapshot);
+          _offlineOnline = true;
+          await _rememberRemoteVersionBestEffort();
+        } else if (refreshAfter) {
           await super.setOperationSessionPin(pin);
           _offlineOnline = super.sharedOnline;
           await _rememberRemoteVersionBestEffort();
@@ -528,6 +649,10 @@ class OfflineFirstWarehouseController extends WarehouseController {
   @override
   void dispose() {
     _offlinePollTimer?.cancel();
+    for (final timer in _draftQueueTimers.values) {
+      timer.cancel();
+    }
+    _draftQueueTimers.clear();
     super.dispose();
   }
 }

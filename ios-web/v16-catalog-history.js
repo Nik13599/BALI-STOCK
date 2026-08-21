@@ -36,7 +36,7 @@
     return data;
   }
   function catalogPost(employee, items) {
-    return catalogRequest({action:'catalog_product_batch',employee:clean(employee),items:items});
+    return api('catalog_product_batch',{employee:clean(employee),items:items},true);
   }
   function catalogDelete(employee, product) {
     return catalogRequest({action:'product_delete',employee:clean(employee),product_key:productKey(product)});

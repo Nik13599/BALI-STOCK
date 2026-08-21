@@ -104,6 +104,31 @@ class WarehouseRepository {
     );
   }
 
+  Future<void> updateProductControlCache({
+    required int productId,
+    required int minimumAmount,
+    required int targetAmount,
+    required int varianceRecheckAmount,
+    String? barcode,
+  }) async {
+    if (minimumAmount < 0 || targetAmount < 0 || varianceRecheckAmount < 0) {
+      throw ArgumentError('Минимум, цель и порог перепроверки не могут быть отрицательными');
+    }
+    final db = await _database.database;
+    final updated = await db.update(
+      'products',
+      {
+        'minimum_ml': minimumAmount,
+        'target_amount': targetAmount,
+        'variance_recheck_amount': varianceRecheckAmount,
+        'barcode': barcode?.trim().isEmpty == true ? null : barcode?.trim(),
+      },
+      where: 'id = ?',
+      whereArgs: [productId],
+    );
+    if (updated != 1) throw StateError('Товар для изменения не найден');
+  }
+
   Future<void> receiveDelivery(List<DeliveryDraftLine> lines) async {
     if (lines.isEmpty) throw ArgumentError('Добавьте хотя бы одну позицию поставки');
     final db = await _database.database;
