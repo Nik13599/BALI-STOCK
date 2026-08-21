@@ -68,6 +68,13 @@ def embed_script(html: str, script_id: str, source: str) -> str:
 def inline_scanner_library(html: str) -> str:
     source = fetch_scanner_library().replace("</script", "<\\/script")
     replacement = f'<script id="bali-html5-qrcode-v238">{source}</script>'
+    embedded_pattern = re.compile(
+        r'<script\s+id=["\']bali-html5-qrcode-v238["\'][^>]*>[\s\S]*?</script>',
+        re.I,
+    )
+    updated, embedded_count = embedded_pattern.subn(lambda _: replacement, html, count=1)
+    if embedded_count == 1:
+        return updated
     pattern = re.compile(
         r'<script\s+src=["\']https://cdn\.jsdelivr\.net/npm/html5-qrcode@2\.3\.8/html5-qrcode\.min\.js["\'][^>]*>\s*</script>',
         re.I,
@@ -104,6 +111,8 @@ def harden_runtime_polling(html: str) -> str:
         "window.baliPollSnapshotVersion();else if(!document.hidden)snapshot().catch(()=>{})},15000)"
     )
     updated, count = pattern.subn(replacement, html, count=1)
+    if count == 0 and "baliPollSnapshotVersion" in html and "},15000)" in html:
+        return html
     if count != 1:
         raise SystemExit(f"Legacy full-snapshot polling loop not found exactly once ({count})")
     return updated
@@ -155,6 +164,10 @@ def main() -> None:
         "__BALI_STOCK_V15_COMPAT__",
         "__BALI_STOCK_V16_CATALOG_HISTORY__",
         "__BALI_STOCK_IOS_SCANNER_COMPAT__",
+        "__BALI_STOCK_IOS_LIVE_SCANNER__",
+        "formats.EAN_13",
+        "config.fps = Math.max(15",
+        "focusMode: 'continuous'",
         "__BALI_STOCK_IOS_RUNTIME_PERFORMANCE__",
         "__BALI_STOCK_MOBILE_STOCKTAKE_COMPACT__",
         "bali-html5-qrcode-v238",
@@ -171,6 +184,8 @@ def main() -> None:
         "Неверный пароль",
         "x-bali-stock-pin",
         "cdn.jsdelivr.net/npm/html5-qrcode",
+        "input.setAttribute('capture', 'environment')",
+        "scanner.scanFile(file, true)",
     ]
     found = [value for value in forbidden if value in html]
     if found:

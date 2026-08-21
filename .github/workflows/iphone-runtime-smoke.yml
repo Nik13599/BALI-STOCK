@@ -77,70 +77,8 @@ jobs:
           node --check ios-web/ios-scanner-compat.js
           node --check ios-web/ios-runtime-performance.js
 
-      - name: Verify iPhone Blob scanner uses the existing scan action without UI changes
-        run: |
-          node - <<'JS'
-          const fs = require('fs');
-          const vm = require('vm');
-
-          (async () => {
-            let originalStartCalls = 0;
-            let decoded = '';
-            let createdInput = null;
-            let changeHandler = null;
-            let pickerOpened = false;
-
-            function Html5Qrcode() {}
-            Html5Qrcode.prototype.start = function () { originalStartCalls += 1; return Promise.resolve(); };
-            Html5Qrcode.prototype.scanFile = function () { return Promise.resolve('BALI-123'); };
-
-            const body = {
-              appendChild(node) { node.parentNode = body; createdInput = node; },
-              removeChild(node) { if (createdInput === node) createdInput = null; node.parentNode = null; },
-            };
-            const document = {
-              body,
-              createElement(tag) {
-                if (tag !== 'input') throw new Error('Unexpected visible element: ' + tag);
-                return {
-                  style: {}, files: [{ name: 'barcode.jpg' }], parentNode: null,
-                  setAttribute(name, value) { this[name] = value; },
-                  addEventListener(name, handler) { if (name === 'change') changeHandler = handler; },
-                  click() { pickerOpened = true; },
-                };
-              },
-            };
-            const context = {
-              Html5Qrcode,
-              document,
-              navigator: {
-                userAgent: 'iPhone', platform: 'iPhone', maxTouchPoints: 5,
-                standalone: true,
-                mediaDevices: { getUserMedia() { throw new Error('WebClip must use native capture'); } },
-              },
-              location: { protocol: 'https:' },
-              isSecureContext: true,
-              alert(message) { throw new Error(message); },
-              console,
-            };
-            context.window = context;
-            vm.createContext(context);
-            vm.runInContext(fs.readFileSync('ios-web/ios-scanner-compat.js', 'utf8'), context);
-
-            const scanner = new context.Html5Qrcode();
-            await scanner.start({}, {}, (value) => { decoded = value; }, () => {});
-            if (!pickerOpened) throw new Error('Native iPhone camera picker was not opened');
-            if (originalStartCalls !== 0) throw new Error('Blob getUserMedia path was still called');
-            if (!createdInput || createdInput.capture !== 'environment' || createdInput.style.display !== 'none') {
-              throw new Error('Hidden native capture input contract failed');
-            }
-            await changeHandler();
-            await new Promise((resolve) => setImmediate(resolve));
-            if (decoded !== 'BALI-123') throw new Error('Captured barcode was not returned');
-            if (createdInput !== null) throw new Error('Temporary capture input was not removed');
-            console.log('iPhone WebClip scanner compatibility OK without new UI controls');
-          })().catch((error) => { console.error(error); process.exit(1); });
-          JS
+      - name: Verify fast iPhone live barcode scanner without photo fallback
+        run: node tool/test_ios_live_scanner.js
 
       - name: Regression test missing snapshot does not crash compat layer
         run: |
@@ -212,6 +150,8 @@ jobs:
               'Введите пароль доступа',
               'Пароль не введён',
               'Неверный пароль',
+              "input.setAttribute('capture', 'environment')",
+              'scanner.scanFile(file, true)',
           ]
           remaining = [item for item in forbidden if item in html]
           if remaining:
@@ -230,10 +170,13 @@ jobs:
               '__BALI_STOCK_V15_COMPAT__',
               '__BALI_STOCK_V16_CATALOG_HISTORY__',
               '__BALI_STOCK_IOS_SCANNER_COMPAT__',
+              '__BALI_STOCK_IOS_LIVE_SCANNER__',
+              'formats.EAN_13',
+              'config.fps = Math.max(15',
+              "focusMode: 'continuous'",
               '__BALI_STOCK_IOS_RUNTIME_PERFORMANCE__',
               '__BALI_STOCK_VISUAL_CONTRACT__',
               'bali-html5-qrcode-v238',
-              "input.setAttribute('capture', 'environment')",
               'baliPollSnapshotVersion',
               'async function snapshot',
               'baseSnapshot=snapshot',
