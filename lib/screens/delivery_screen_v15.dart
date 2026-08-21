@@ -165,11 +165,12 @@ class _DeliveryScreenV15State extends State<DeliveryScreenV15> {
   Future<void> _manualProductCode() async {
     final code = await enterProductCode(context);
     if (!mounted || code == null) return;
-    final product = findProductByCode(widget.controller.products, code);
-    if (product == null) {
-      showErrorSnack(context, 'Код товара ${code.trim()} не привязан ни к одной позиции.');
-      return;
-    }
+    final product = await resolveProductCode(
+      context,
+      controller: widget.controller,
+      rawCode: code,
+    );
+    if (!mounted || product == null) return;
     await _addLine(product: product);
   }
 
@@ -177,11 +178,12 @@ class _DeliveryScreenV15State extends State<DeliveryScreenV15> {
     while (mounted) {
       final code = await scanProductCode(context);
       if (!mounted || code == null) return;
-      final product = findProductByCode(widget.controller.products, code);
-      if (product == null) {
-        showErrorSnack(context, 'Код товара ${code.trim()} не привязан ни к одной позиции.');
-        continue;
-      }
+      final product = await resolveProductCode(
+        context,
+        controller: widget.controller,
+        rawCode: code,
+      );
+      if (!mounted || product == null) return;
       final before = _lines[product.id];
       final line = await legacy.showDeliveryLineDialog(
         context,

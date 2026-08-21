@@ -328,7 +328,13 @@ class OfflineFirstWarehouseController extends WarehouseController {
     _requireLocalPin();
     final draft = await _draftReader.readDraft(draftId);
     await _local.deleteStocktakeDraft(draftId);
-    await _offline.enqueue('draft_delete', SyncPayloadBuilder.draftDelete(draft.employeeName));
+    await _offline.enqueue(
+      'draft_delete',
+      SyncPayloadBuilder.draftDelete(
+        draft.employeeName,
+        startedAt: draft.startedAt,
+      ),
+    );
     await _afterLocalMutation();
   }
 
@@ -355,7 +361,13 @@ class OfflineFirstWarehouseController extends WarehouseController {
     );
     final operationId = await _local.completeStocktakeDraft(draftId, activeSeconds);
     await _offline.enqueue('stocktake', payload);
-    await _offline.enqueue('draft_delete', SyncPayloadBuilder.draftDelete(draft.employeeName));
+    await _offline.enqueue(
+      'draft_delete',
+      SyncPayloadBuilder.draftDelete(
+        draft.employeeName,
+        startedAt: draft.startedAt,
+      ),
+    );
     await _afterLocalMutation();
     return operationId;
   }

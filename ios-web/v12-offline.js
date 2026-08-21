@@ -81,8 +81,11 @@ async function __v12Coalesce(action, body) {
     const p = item.payload || {};
     let same = false;
     if (action === 'draft_sync' || action === 'draft_delete') {
+      const queuedStarted = String(p.started_at || '').trim();
+      const nextStarted = String(body.started_at || '').trim();
       same = (p.action === 'draft_sync' || p.action === 'draft_delete') &&
-        String(p.employee || '').trim().toLowerCase() === String(body.employee || '').trim().toLowerCase();
+        String(p.employee || '').trim().toLowerCase() === String(body.employee || '').trim().toLowerCase() &&
+        (!queuedStarted || !nextStarted || queuedStarted === nextStarted);
     } else if (action === 'product_meta') {
       same = p.action === 'product_meta' && p.product_key === body.product_key;
     }
@@ -207,16 +210,19 @@ function __v12ApplyMutation(action, body, id) {
     });
   } else if (action === 'draft_delete') {
     const emp = String(body.employee || '').trim().toLowerCase();
-    S.drafts = (S.drafts || []).filter(d=>String(d.employee_name||'').trim().toLowerCase()!==emp);
+    const started = String(body.started_at || '').trim();
+    S.drafts = (S.drafts || []).filter(d=>{
+      const sameEmployee = String(d.employee_name||'').trim().toLowerCase()===emp;
+      const sameStarted = !started || String(d.started_at||'').trim()===started;
+      return !(sameEmployee && sameStarted);
+    });
   } else if (action === 'product_meta') {
     const p = __v12Product(body.product_key);
     if (p) {
-      p.minimum_amount = n(body.minimum_amount);
-      p.target_amount = n(body.target_amount);
-      p.default_cost = body.default_cost ?? null;
-      p.cost_currency = body.cost_currency || 'BYN';
-      p.barcode = body.barcode || null;
-      p.variance_recheck_amount = n(body.variance_recheck_amount);
+      if (Object.hasOwn(body, 'minimum_amount')) p.minimum_amount = n(body.minimum_amount);
+      if (Object.hasOwn(body, 'target_amount')) p.target_amount = n(body.target_amount);
+      if (Object.hasOwn(body, 'barcode')) p.barcode = body.barcode || null;
+      if (Object.hasOwn(body, 'variance_recheck_amount')) p.variance_recheck_amount = n(body.variance_recheck_amount);
     }
   } else if (action === 'purchase_request_create') {
     S.purchase_requests = Array.isArray(S.purchase_requests) ? S.purchase_requests : [];
@@ -425,33 +431,47 @@ wireStock = function() {
   };
 };
 async function __v12HandleCode(raw) {
+  const resolved = await __v12ResolveProductCode(raw);
+  if (resolved) __v12ShowScannedProduct(resolved.product, resolved.code, resolved.manual);
+}
+async function __v12ResolveProductCode(raw) {
   const code = String(raw || '').trim();
-  if (!code) return;
-  const p = S.products.find(x=>String(x.barcode||'').trim() === code);
-  if (p) {
-    openModal(`<h2>Товар найден</h2><div class="card"><div class="name">${esc(p.name)}</div><div class="muted">${esc(p.category_name)} • код ${esc(code)}</div><div class="amount">${init(p)?esc(parts(qty(p),p)):'Остаток не введён'}</div></div><button id="v12Hist" class="secondary" style="width:100%">История товара</button><button onclick="closeModal()" class="secondary" style="width:100%;margin-top:8px">Закрыть</button>`);
-    $('#v12Hist').onclick = ()=>{ closeModal(); showProductHistory(keyOf(p)); };
-    return;
-  }
-  const bind = await confirmBox('Код не найден', `Код ${code} не привязан ни к одному товару. Привязать?`);
-  if (!bind) return;
-  const p2 = await chooseProduct('Выберите товар для привязки');
-  if (!p2) return;
+  if (!code) return null;
+  const p = S.products.find(x=>String(x.barcode||'').trim().toLowerCase() === code.toLowerCase());
+  if (p) return {product:p, code, manual:false};
+  const action = await __v12ChooseUnknownCodeAction(code);
+  if (!action) return null;
+  const p2 = await chooseProduct(action === 'assign' ? 'Выберите товар для назначения кода' : 'Найдите товар вручную');
+  if (!p2) return null;
+  if (action === 'manual') return {product:p2, code, manual:true};
   await api('authorize',{},true);
   const employee = await ask('ФИО сотрудника');
-  if (!employee) return;
+  if (!employee) return null;
   await api('product_meta',{
     employee,
     product_key:keyOf(p2),
     minimum_amount:n(p2.minimum_amount),
     target_amount:n(p2.target_amount),
-    default_cost:p2.default_cost??null,
-    cost_currency:p2.cost_currency||'BYN',
     barcode:code,
     variance_recheck_amount:n(p2.variance_recheck_amount)
   },true);
   toast(navigator.onLine ? 'Код привязан к товару' : 'Код сохранён на iPhone и будет синхронизирован');
   render();
+  const current = S.products.find(x=>keyOf(x)===keyOf(p2)) || p2;
+  return {product:{...current, barcode:code}, code, manual:false};
+}
+function __v12ShowScannedProduct(product, code, manual=false) {
+  openModal(`<h2>${manual?'Товар выбран вручную':'Товар найден'}</h2><div class="card"><div class="name">${esc(product.name)}</div><div class="muted">${esc(product.category_name)}${manual?'':' • код '+esc(code)}</div><div class="amount">${init(product)?esc(parts(qty(product),product)):'Остаток не введён'}</div></div><button id="v12Hist" class="secondary" style="width:100%">История товара</button><button id="v12ProductClose" class="secondary" style="width:100%;margin-top:8px">Закрыть</button>`);
+  $('#v12Hist').onclick = ()=>{ closeModal(); showProductHistory(keyOf(product)); };
+  $('#v12ProductClose').onclick = closeModal;
+}
+function __v12ChooseUnknownCodeAction(code) {
+  return new Promise(resolve=>{
+    openModal(`<h2>Код не найден</h2><p class="muted">Код ${esc(code)} не привязан ни к одному товару.</p><button id="v12AssignCode" style="width:100%">Назначить код товару</button><button id="v12FindManual" class="secondary" style="width:100%;margin-top:8px">Найти товар вручную</button><button id="v12UnknownCancel" class="secondary" style="width:100%;margin-top:8px">Закрыть</button>`);
+    $('#v12AssignCode').onclick=()=>{closeModal();resolve('assign');};
+    $('#v12FindManual').onclick=()=>{closeModal();resolve('manual');};
+    $('#v12UnknownCancel').onclick=()=>{closeModal();resolve(null);};
+  });
 }
 async function __v12StartScanner() {
   if (typeof Html5Qrcode === 'undefined') {

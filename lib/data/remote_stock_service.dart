@@ -276,8 +276,6 @@ class RemoteStockService {
         if (minimumAmount != null) 'minimum_amount': minimumAmount,
         if (targetAmount != null) 'target_amount': targetAmount,
         if (barcode != null) 'barcode': barcode,
-        if (defaultCost != null) 'default_cost': defaultCost,
-        if (costCurrency != null) 'cost_currency': costCurrency,
         if (varianceRecheckAmount != null) 'variance_recheck_amount': varianceRecheckAmount,
       });
 
@@ -393,8 +391,16 @@ class RemoteStockService {
     });
   }
 
-  Future<void> deleteDraft({required String pin, required String employee}) async {
-    await post(pin, {'action': 'draft_delete', 'employee': employee});
+  Future<Map<String, dynamic>> deleteDraft({
+    required String pin,
+    required String employee,
+    required DateTime startedAt,
+  }) {
+    return post(pin, {
+      'action': 'draft_delete',
+      'employee': employee,
+      'started_at': startedAt.toUtc().toIso8601String(),
+    });
   }
 
   Future<Map<String, dynamic>> post(String _, Map<String, dynamic> body) async {

@@ -162,8 +162,9 @@ class SyncPayloadBuilder {
     };
   }
 
-  static Map<String, dynamic> draftDelete(String employee) => {
+  static Map<String, dynamic> draftDelete(String employee, {DateTime? startedAt}) => {
         'action': 'draft_delete',
         'employee': employee,
+        if (startedAt != null) 'started_at': startedAt.toUtc().toIso8601String(),
       };
 }

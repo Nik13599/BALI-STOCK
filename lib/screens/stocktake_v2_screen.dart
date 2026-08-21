@@ -389,14 +389,12 @@ class _StocktakeV2ScreenState extends State<StocktakeV2Screen>
   Future<void> _manualCode() async {
     final code = await enterProductCode(context);
     if (!mounted || code == null) return;
-    final product = findProductByCode(widget.controller.products, code);
-    if (product == null) {
-      showErrorSnack(
-        context,
-        'Код товара ${code.trim()} не привязан ни к одной позиции.',
-      );
-      return;
-    }
+    final product = await resolveProductCode(
+      context,
+      controller: widget.controller,
+      rawCode: code,
+    );
+    if (!mounted || product == null) return;
     final line = _lineForProduct(product);
     if (line == null) {
       showErrorSnack(context, 'Товар не входит в текущий переучёт.');
@@ -409,14 +407,12 @@ class _StocktakeV2ScreenState extends State<StocktakeV2Screen>
     while (mounted) {
       final code = await scanProductCode(context);
       if (!mounted || code == null) return;
-      final product = findProductByCode(widget.controller.products, code);
-      if (product == null) {
-        showErrorSnack(
-          context,
-          'Код товара ${code.trim()} не привязан ни к одной позиции. Сканируйте следующий товар или закройте сканер.',
-        );
-        continue;
-      }
+      final product = await resolveProductCode(
+        context,
+        controller: widget.controller,
+        rawCode: code,
+      );
+      if (!mounted || product == null) return;
       final line = _lineForProduct(product);
       if (line == null) {
         showErrorSnack(

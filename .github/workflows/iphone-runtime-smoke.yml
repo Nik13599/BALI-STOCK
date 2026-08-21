@@ -22,6 +22,12 @@ jobs:
           from pathlib import Path
 
           contracts = {
+              'ios-web/v14-scan-workflows.js': [
+                  "__BALI_V14_SCAN_WORKFLOWS__='v14.5'",
+                  'Назначить код товару',
+                  'Найти товар вручную',
+                  '__baliResolveProductCode',
+              ],
               'ios-web/v15-ui.js': [
                   '__BALI_STOCK_V15_UI__',
                   'Поставщик не назначен',
@@ -60,6 +66,7 @@ jobs:
                   'ДОБАВИТЬ НОВЫЙ ТОВАР',
                   'catalog_product_batch',
                   "api('draft_delete'",
+                  "started_at:d.started_at||''",
                   'Удалять можно только черновики',
               ],
           }
@@ -71,6 +78,7 @@ jobs:
           print('Local iPhone UI module contracts OK')
           PY
           node --check ios-web/v15-ui.js
+          node --check ios-web/v14-scan-workflows.js
           node --check ios-web/v15-delivery-link.js
           node --check ios-web/v15-compat.js
           node --check ios-web/v16-catalog-history.js
@@ -183,6 +191,9 @@ jobs:
               'СОХРАНИТЬ → СЛЕДУЮЩИЙ СКАН',
               'Закупочная цена обязательна для каждой позиции поставки.',
               'Накладная не распознана. Загрузите оригинальную накладную.',
+              'Назначить код товару',
+              'Найти товар вручную',
+              '__baliResolveProductCode',
           ]
           missing = [item for item in required if item not in html]
           if missing:

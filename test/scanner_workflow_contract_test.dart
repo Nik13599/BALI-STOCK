@@ -47,6 +47,10 @@ void main() {
     expect(source.contains('Ввести код товара'), isTrue);
     expect(source.contains('Найти по названию или коду товара'), isTrue);
     expect(source.contains("p.barcode ?? ''"), isTrue);
+    expect(actions.contains('Назначить код товару'), isTrue);
+    expect(actions.contains('Найти товар вручную'), isTrue);
+    expect(actions.contains('controller.updateProductControl'), isTrue);
+    expect(source.contains('resolveProductCode('), isTrue);
   });
 
   test('full stocktake supports sequential scan and clear entered/unentered workflow', () {
@@ -62,6 +66,7 @@ void main() {
     expect(source.contains('_StocktakeListFilter.filled'), isTrue);
     expect(source.contains('Название / категория / код товара'), isTrue);
     expect(source.contains("final barcode = _productFor(line)?.barcode ?? ''"), isTrue);
+    expect(source.contains('resolveProductCode('), isTrue);
   });
 
   test('delivery supports sequential scan, manual code, name search and mandatory cost', () {
@@ -80,6 +85,7 @@ void main() {
     expect(editor.contains('Сохранить → следующий скан'), isTrue);
     expect(editor.contains('Закупочная цена обязательна'), isTrue);
     expect(editor.contains('final productLocked = initial != null || preselectedProduct != null;'), isTrue);
+    expect(screen.contains('resolveProductCode('), isTrue);
   });
 
   test('invoice workflow blocks non-invoices and renders recognition progress safely', () {
@@ -110,6 +116,8 @@ void main() {
     final smoke = File('.github/workflows/iphone-runtime-smoke.yml').readAsStringSync();
     final scannerCompat = File('ios-web/ios-scanner-compat.js').readAsStringSync();
     final builder = File('tool/build_ios_production_runtime.py').readAsStringSync();
+    final offline = File('ios-web/v12-offline.js').readAsStringSync();
+    final productionFlows = File('ios-web/v14-scan-workflows.js').readAsStringSync();
 
     expect(runtimeHost.contains('LEGACY_LAUNCHER'), isTrue);
     expect(runtimeHost.contains('__BALI_STOCK_VISUAL_CONTRACT__'), isTrue);
@@ -133,5 +141,17 @@ void main() {
     expect(smoke.contains('СОХРАНИТЬ → СЛЕДУЮЩИЙ СКАН'), isTrue);
     expect(smoke.contains('Закупочная цена обязательна для каждой позиции поставки.'), isTrue);
     expect(smoke.contains('Parse every production runtime inline JavaScript block'), isTrue);
+    expect(offline.contains('Назначить код товару'), isTrue);
+    expect(offline.contains('Найти товар вручную'), isTrue);
+    expect(offline.contains('__v12ChooseUnknownCodeAction'), isTrue);
+    expect(productionFlows.contains("__BALI_V14_SCAN_WORKFLOWS__='v14.5'"), isTrue);
+    expect(productionFlows.contains('Назначить код товару'), isTrue);
+    expect(productionFlows.contains('Найти товар вручную'), isTrue);
+    expect(productionFlows.contains('window.__baliResolveProductCode'), isTrue);
+    expect(productionFlows.contains("await api('product_meta'"), isTrue);
+    expect(productionFlows.contains('default_cost:'), isFalse);
+    final iphoneOperations = File('ios-web/v13/part-02.js').readAsStringSync();
+    expect(iphoneOperations.contains('__v12ResolveProductCode(code)'), isTrue);
+    expect(iphoneOperations.contains('Товар с таким кодом не найден'), isFalse);
   });
 }

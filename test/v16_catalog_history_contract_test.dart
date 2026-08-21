@@ -43,6 +43,26 @@ void main() {
     expect(source.contains('ДОБАВИТЬ НОВЫЙ ТОВАР'), isTrue);
     expect(source.contains('bali-stock-catalog-api'), isTrue);
     expect(source.contains("api('draft_delete'"), isTrue);
+    expect(source.contains("started_at:d.started_at||''"), isTrue);
+    expect(source.contains('if (old) old.remove();'), isTrue);
     expect(source.contains('Проведённые операции не удаляются'), isTrue);
+  });
+
+  test('draft deletion is verified by the server and reconciled on every device', () {
+    final api = File('supabase/functions/bali-stock-client-api/index.ts').readAsStringSync();
+    final sync = File('lib/data/remote_sync_repository.dart').readAsStringSync();
+    final database = File('lib/data/database.dart').readAsStringSync();
+    final payload = File('lib/data/sync_payload_builder.dart').readAsStringSync();
+
+    expect(api.contains('.delete()'), isTrue);
+    expect(api.contains('.select("employee_key,started_at")'), isTrue);
+    expect(api.contains('deleted_count:'), isTrue);
+    expect(api.contains('snapshot: out'), isTrue);
+    expect(database.contains('version: 8'), isTrue);
+    expect(database.contains('remote_mirrored INTEGER NOT NULL DEFAULT 0'), isTrue);
+    expect(database.contains("{'remote_mirrored': 1}"), isTrue);
+    expect(sync.contains("where: 'remote_mirrored = 1'"), isTrue);
+    expect(sync.contains('remoteEmployees.contains(employee)'), isTrue);
+    expect(payload.contains("'started_at': startedAt.toUtc().toIso8601String()"), isTrue);
   });
 }
