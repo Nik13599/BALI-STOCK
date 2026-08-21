@@ -1,270 +1,40 @@
 name: Apply mobile stocktake compact patch
 
 on:
-  push:
-    branches: ["release/mobile-stocktake-1.0.5"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
   patch:
+    if: github.head_ref == 'release/mobile-stocktake-1.0.5' || github.ref_name == 'release/mobile-stocktake-1.0.5'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: release/mobile-stocktake-1.0.5
           fetch-depth: 0
-      - name: Apply compact Android/iOS stocktake UI and bump version
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          import re
-
-          stocktake = Path('lib/screens/stocktake_v2_screen.dart')
-          text = stocktake.read_text(encoding='utf-8')
-          if 'final compactMobile = platform == TargetPlatform.android || platform == TargetPlatform.iOS;' not in text:
-              text = text.replace(
-                  '    final complete = filled == draft.totalCount;\n\n    return Scaffold(',
-                  '    final complete = filled == draft.totalCount;\n'
-                  '    final platform = Theme.of(context).platform;\n'
-                  '    final compactMobile = platform == TargetPlatform.android || platform == TargetPlatform.iOS;\n\n'
-                  '    return Scaffold(',
-                  1,
-              )
-              text = text.replace(
-                  '            padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),',
-                  '            padding: EdgeInsets.fromLTRB(compactMobile ? 10 : 16, compactMobile ? 7 : 12, compactMobile ? 10 : 16, compactMobile ? 6 : 10),',
-                  1,
-              )
-
-              pattern = re.compile(
-                  r"\n\s*const SizedBox\(height: 10\),\n\s*Wrap\(\n\s*spacing: 8,[\s\S]*?label: Text\('Введено • \\$filled'\),\n\s*\),\n\s*\],\n\s*\),",
-                  re.M,
-              )
-              replacement = r'''
-                const SizedBox(height: 8),
-                if (compactMobile)
-                  SizedBox(
-                    height: 42,
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _search,
-                            textInputAction: TextInputAction.search,
-                            style: const TextStyle(fontSize: 14),
-                            decoration: const InputDecoration(
-                              isDense: true,
-                              prefixIcon: Icon(Icons.search, size: 18),
-                              prefixIconConstraints: BoxConstraints(minWidth: 38, minHeight: 38),
-                              hintText: 'Поиск',
-                              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 7),
-                        SizedBox(
-                          height: 42,
-                          child: FilledButton.tonalIcon(
-                            onPressed: _submitting ? null : _scanWorkflow,
-                            style: FilledButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(horizontal: 10),
-                              visualDensity: VisualDensity.compact,
-                            ),
-                            icon: const BaliNavIcon(kind: BaliNavIconKind.scan, active: true, size: 18),
-                            label: const Text('Скан', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                else ...[
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      FilledButton.tonalIcon(
-                        onPressed: _submitting ? null : _scanWorkflow,
-                        icon: const BaliNavIcon(kind: BaliNavIconKind.scan, active: true, size: 20),
-                        label: const Text('Сканировать товар'),
-                      ),
-                      OutlinedButton.icon(
-                        onPressed: _submitting ? null : _manualCode,
-                        icon: const Icon(Icons.pin_outlined),
-                        label: const Text('Ввести код товара'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: _search,
-                    decoration: const InputDecoration(
-                      prefixIcon: Icon(Icons.search),
-                      hintText: 'Название / категория / код товара',
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 8),
-                if (compactMobile)
-                  SizedBox(
-                    height: 34,
-                    child: ListView(
-                      scrollDirection: Axis.horizontal,
-                      children: [
-                        ChoiceChip(
-                          visualDensity: VisualDensity.compact,
-                          selected: _listFilter == _StocktakeListFilter.all,
-                          onSelected: (_) => setState(() => _listFilter = _StocktakeListFilter.all),
-                          label: Text('Все ${draft.totalCount}', style: const TextStyle(fontSize: 12)),
-                        ),
-                        const SizedBox(width: 6),
-                        ChoiceChip(
-                          visualDensity: VisualDensity.compact,
-                          selected: _listFilter == _StocktakeListFilter.unfilled,
-                          onSelected: (_) => setState(() => _listFilter = _StocktakeListFilter.unfilled),
-                          label: Text('Не введено ${draft.totalCount - filled}', style: const TextStyle(fontSize: 12)),
-                        ),
-                        const SizedBox(width: 6),
-                        ChoiceChip(
-                          visualDensity: VisualDensity.compact,
-                          selected: _listFilter == _StocktakeListFilter.filled,
-                          onSelected: (_) => setState(() => _listFilter = _StocktakeListFilter.filled),
-                          label: Text('Введено $filled', style: const TextStyle(fontSize: 12)),
-                        ),
-                      ],
-                    ),
-                  )
-                else
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      ChoiceChip(
-                        selected: _listFilter == _StocktakeListFilter.all,
-                        onSelected: (_) => setState(() => _listFilter = _StocktakeListFilter.all),
-                        avatar: const Icon(Icons.view_list_outlined, size: 18),
-                        label: Text('Все • ${draft.totalCount}'),
-                      ),
-                      ChoiceChip(
-                        selected: _listFilter == _StocktakeListFilter.unfilled,
-                        onSelected: (_) => setState(() => _listFilter = _StocktakeListFilter.unfilled),
-                        avatar: const Icon(Icons.pending_actions, size: 18),
-                        label: Text('Не введено • ${draft.totalCount - filled}'),
-                      ),
-                      ChoiceChip(
-                        selected: _listFilter == _StocktakeListFilter.filled,
-                        onSelected: (_) => setState(() => _listFilter = _StocktakeListFilter.filled),
-                        avatar: const Icon(Icons.check_circle_outline, size: 18),
-                        label: Text('Введено • $filled'),
-                      ),
-                    ],
-                  ),'''
-              text, count = pattern.subn('\n' + replacement, text, count=1)
-              if count != 1:
-                  raise SystemExit(f'Could not replace stocktake toolbar block: {count}')
-              stocktake.write_text(text, encoding='utf-8')
-
-          builder = Path('tool/build_ios_production_runtime.py')
-          b = builder.read_text(encoding='utf-8')
-          b = b.replace(
-              'RUNTIME_URL = "https://mvnxfouyoynqyjdpcblh.supabase.co/functions/v1/bali-stock-ios-runtime"',
-              'RUNTIME_URL = "https://mvnxfouyoynqyjdpcblh.supabase.co/storage/v1/object/public/bali-stock-runtime/production/bali-stock.html"',
-          )
-          if 'MOBILE_STOCKTAKE_PATCH = r\'\'\'' not in b:
-              marker = '\n\ndef read_version() -> tuple[str, int]:\n'
-              patch = r'''
-
-MOBILE_STOCKTAKE_PATCH = r'''<style id="bali-mobile-stocktake-compact-css">
-@media(max-width:760px){
-  .baliCountHead{display:flex;align-items:center;gap:7px;margin-bottom:5px}.baliCountHead h2{font-size:17px;margin:0;line-height:1.05}.baliCountMeta{font-size:11px;color:#9fb3a5}.baliCountRestart{padding:7px 9px;font-size:11px;margin-left:auto}
-  .baliCountProgress{height:5px!important;margin:6px 0 7px!important}.baliCountTools{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px;align-items:center;margin-bottom:6px}.baliCountTools .input{margin:0!important;min-height:38px;padding:8px 10px!important}.baliCountScan{height:38px;padding:7px 10px!important;white-space:nowrap;font-size:12px}.baliCountFilter{display:flex;align-items:center;gap:7px;font-size:11px;margin:0 0 5px;color:#b7c5bb}.baliCountFilter input{margin:0}.baliCountStats{font-size:11px;color:#9fb3a5;margin-left:auto}.cat{margin-top:10px!important}
-}
-</style>
-<script id="bali-mobile-stocktake-compact-v105">
-(function(){
-  'use strict';
-  window.__BALI_STOCK_MOBILE_STOCKTAKE_COMPACT__='1.0.5';
-  var legacyRenderCount=renderCount;
-  var legacyWireCount=wireCount;
-  var legacyHandleProductCode=window.handleProductCode;
-  function mobileCount(){return window.matchMedia('(max-width:760px)').matches||/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)}
-  function renderCompactCount(){
-    if(!mobileCount()||!count)return legacyRenderCount();
-    var filled=count.lines.filter(filledCountLine).length,total=count.lines.length,q=count.search||'';
-    var lines=count.lines.filter(function(l){return(!count.onlyUnfilled||!filledCountLine(l))&&(!q||((l.product_name+' '+l.category_name).toLowerCase().includes(q.toLowerCase())))}),groups={};
-    lines.forEach(function(l){(groups[l.category_name]??=[]).push(l)});
-    return '<div class="baliCountHead"><div class="grow"><h2>Переучёт • '+esc(count.employee)+'</h2><div class="baliCountMeta">'+dur(count.active_seconds)+' • '+filled+'/'+total+'</div></div><button id="cntRestart" class="danger baliCountRestart">Сначала</button></div>'+
-      '<div class="progress baliCountProgress"><i style="width:'+(total?filled/total*100:0)+'%"></i></div>'+
-      '<div class="baliCountTools"><input id="cntSearch" class="input grow" placeholder="Поиск" value="'+esc(q)+'"><button id="cntScan" class="baliCountScan">▣ Скан</button></div>'+
-      '<label class="baliCountFilter"><input id="onlyUnfilled" type="checkbox" '+(count.onlyUnfilled?'checked':'')+'> Только не заполнено <span class="baliCountStats">осталось '+(total-filled)+'</span></label>'+
-      '<div>'+Object.entries(groups).map(function(entry){var cat=entry[0],ls=entry[1];return '<div class="cat"><span>'+esc(cat)+'</span><small>'+ls.filter(filledCountLine).length+'/'+ls.length+'</small></div>'+ls.map(countLineHtml).join('')}).join('')+'</div>'+
-      '<div class="card"><b>Прогресс: '+filled+' из '+total+'</b><button id="cntFinish" '+(filled===total?'':'disabled')+' style="width:100%;margin-top:8px">ЗАВЕРШИТЬ ПЕРЕУЧЁТ</button></div>';
-  }
-  function wireCompactCount(){
-    if(!mobileCount()||!count)return legacyWireCount();
-    var search=document.getElementById('cntSearch');if(search)search.oninput=function(e){count.search=e.target.value;render()};
-    var only=document.getElementById('onlyUnfilled');if(only)only.onchange=function(e){count.onlyUnfilled=e.target.checked;render()};
-    document.querySelectorAll('.cw').forEach(function(x){x.oninput=function(){var l=count.lines.find(function(y){return y.product_key===x.dataset.key});l.whole=x.value;l.rechecked=false;saveCount();render()}});
-    document.querySelectorAll('.ce').forEach(function(x){x.oninput=function(){var l=count.lines.find(function(y){return y.product_key===x.dataset.key});l.extra=x.value;l.rechecked=false;saveCount();render()}});
-    document.querySelectorAll('.cc').forEach(function(x){x.oninput=function(){var l=count.lines.find(function(y){return y.product_key===x.dataset.key});l.comment=x.value;saveCount()}});
-    var restart=document.getElementById('cntRestart');if(restart)restart.onclick=async function(){if(await confirmBox('Начать заново?','Все данные текущего черновика будут удалены.')){await api('draft_delete',{employee:count.employee},true);localStorage.removeItem('bali_count_'+count.employee.toLowerCase());clearInterval(countTimer);count=null;render()}};
-    var finish=document.getElementById('cntFinish');if(finish)finish.onclick=finishCount;
-    var scan=document.getElementById('cntScan');if(scan)scan.onclick=function(){window.__baliCountScan=true;setTimeout(function(){window.__baliCountScan=false},30000);startProductCodeScanner()};
-  }
-  window.handleProductCode=async function(code){
-    if(!window.__baliCountScan||!count)return legacyHandleProductCode(code);
-    window.__baliCountScan=false;
-    var p=window.v14ProductByCode(code);if(!p){toast('Код '+String(code||'').trim()+' не привязан к товару.',true);return}
-    var l=count.lines.find(function(x){return x.product_key===keyOf(p)});if(!l){toast('Товар не входит в текущий переучёт.',true);return}
-    var whole=await ask(p.name+' • '+(l.stock_unit==='pcs'?'Фактически, шт.':packLabel(p)),'number',l.whole==null?'':String(l.whole));if(whole==null)return;
-    var w=Number(whole);if(!Number.isInteger(w)||w<0){toast('Проверьте количество',true);return}
-    var extra=0;if(l.stock_unit!=='pcs'){var value=await ask('Доп. '+unit(p),'number',l.extra==null?'':String(l.extra));if(value==null)return;extra=Number(value);if(!Number.isInteger(extra)||extra<0||extra>=Number(l.package_size)){toast('Дополнительный остаток: 0–'+(Number(l.package_size)-1),true);return}}
-    l.whole=w;l.extra=extra;l.rechecked=false;saveCount();toast(p.name+' сохранён');render();
-  };
-  renderCount=renderCompactCount;
-  wireCount=wireCompactCount;
-})();
-</script>'''
-
-
-def apply_mobile_stocktake_patch(html: str) -> str:
-    html = re.sub(r'<style id="bali-mobile-stocktake-compact-css">[\s\S]*?</style>', '', html, count=1, flags=re.I)
-    html = re.sub(r'<script id="bali-mobile-stocktake-compact-v105">[\s\S]*?</script>', '', html, count=1, flags=re.I)
-    if '</body>' not in html:
-        raise SystemExit('Runtime body closing tag missing')
-    return html.replace('</body>', MOBILE_STOCKTAKE_PATCH + '</body>', 1)
-'''
-              b = b.replace(marker, patch + marker, 1)
-              needle = '    for script_id, path in MODULES.items():\n        html = embed_script(html, script_id, path.read_text(encoding="utf-8"))\n\n'
-              if needle not in b:
-                  raise SystemExit('Builder module loop marker not found')
-              b = b.replace(needle, needle + '    html = apply_mobile_stocktake_patch(html)\n\n', 1)
-          builder.write_text(b, encoding='utf-8')
-
-          pubspec = Path('pubspec.yaml')
-          p = pubspec.read_text(encoding='utf-8')
-          p, n = re.subn(r'^version:\s*1\.0\.4\+104\s*$', 'version: 1.0.5+105', p, count=1, flags=re.M)
-          if n != 1 and 'version: 1.0.5+105' not in p:
-              raise SystemExit('Could not bump pubspec version')
-          pubspec.write_text(p, encoding='utf-8')
-
-          # Lightweight contract: both mobile implementations must be present.
-          assert 'compactMobile ? 10 : 16' in stocktake.read_text(encoding='utf-8')
-          assert "__BALI_STOCK_MOBILE_STOCKTAKE_COMPACT__='1.0.5'" in builder.read_text(encoding='utf-8')
-          assert 'version: 1.0.5+105' in pubspec.read_text(encoding='utf-8')
-          PY
-      - name: Format changed Dart source
-        uses: subosito/flutter-action@v2
+      - name: Apply compact Android/iOS stocktake UI
+        run: python tool/apply_mobile_stocktake_compact.py
+      - uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
-      - run: dart format lib/screens/stocktake_v2_screen.dart
-      - name: Remove one-time patch workflow and commit result
+      - name: Format and validate patched sources
+        run: |
+          dart format lib/screens/stocktake_v2_screen.dart
+          python -m py_compile tool/build_ios_production_runtime.py tool/apply_mobile_stocktake_compact.py
+      - name: Commit generated source changes
         run: |
           git config user.name "BALI STOCK Release"
           git config user.email "release@bali-stock.local"
-          git rm .github/workflows/apply-mobile-stocktake-compact.yml
-          git add lib/screens/stocktake_v2_screen.dart tool/build_ios_production_runtime.py pubspec.yaml
+          git add lib/screens/stocktake_v2_screen.dart tool/build_ios_production_runtime.py pubspec.yaml ios-web/mobile-stocktake-compact-v105.js tool/apply_mobile_stocktake_compact.py
+          if git diff --cached --quiet; then
+            echo "Patch already applied"
+            exit 0
+          fi
           git commit -m "feat: compact mobile stocktake controls for Android and iPhone"
           git push origin HEAD:release/mobile-stocktake-1.0.5
