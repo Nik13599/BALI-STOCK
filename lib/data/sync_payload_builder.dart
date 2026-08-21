@@ -167,4 +167,30 @@ class SyncPayloadBuilder {
         'employee': employee,
         if (startedAt != null) 'started_at': startedAt.toUtc().toIso8601String(),
       };
+
+  static Map<String, dynamic> draftSync(StocktakeDraft draft) => {
+        'action': 'draft_sync',
+        'employee': draft.employeeName,
+        'status': draft.status.dbValue,
+        'started_at': draft.startedAt.toUtc().toIso8601String(),
+        'active_seconds': draft.activeSeconds,
+        'filled_count': draft.filledCount,
+        'total_count': draft.totalCount,
+        'payload': {
+          'last_product_id': draft.lastProductId,
+          'lines': draft.lines
+              .map((line) => {
+                    'product_name': line.productName,
+                    'category_name': line.categoryName,
+                    'package_size': line.packageSize,
+                    'stock_unit': line.stockUnit.dbValue,
+                    'before_total': line.beforeTotal,
+                    'before_initialized': line.beforeInitialized,
+                    'sort_order': line.sortOrder,
+                    'whole_packages': line.wholePackages,
+                    'extra_amount': line.extraAmount,
+                  })
+              .toList(growable: false),
+        },
+      };
 }

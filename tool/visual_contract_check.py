@@ -18,7 +18,7 @@ TEXT_HASHES = {
     "ios-web/v15-ui.js": "f58ae884a317523464311a83d0372617b7a349a07fbda12ece72df071b19dbf5",
     "ios-web/v15-delivery-link.js": "df0ce1ce86cbd94717deb0681717d5e5fe913f610804d9c83711494d409a2588",
     "ios-web/v15-compat.js": "a9e51aca12da6bfc45b996edcb0178e7eb6ab5a48a293832f7287ff38968dc0c",
-    "ios-web/v16-catalog-history.js": "557c8977062c7fcf4505006559e5408ef0234cb6f25a23cc3ad198f1fa4ff79c",
+    "ios-web/v16-catalog-history.js": "625fde691e5e89e2cfad234638c5fa7e801db6d525349235035365268a31591a",
     "ios-web/mobile-stocktake-compact-v105.js": "533d6a9893eaf437a23e0b283d8ea403c00cc04eae29a54cad98973c56bbeb6c",
 }
 

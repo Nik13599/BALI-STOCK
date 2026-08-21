@@ -168,12 +168,13 @@ Deno.serve(async (req: Request) => {
     }
 
     upstreamApplied = true;
-    const { error: completeError } = await db.from("stock_client_actions").update({
+    const { data: completedAction, error: completeError } = await db.from("stock_client_actions").update({
       status: "completed",
       result_id: data?.operation_id == null ? null : String(data.operation_id),
       completed_at: new Date().toISOString(),
-    }).eq("action_id", actionId);
+    }).eq("action_id", actionId).select("action_id,status").single();
     if (completeError) throw completeError;
+    if (completedAction?.status !== "completed") throw new Error("client action completion was not persisted");
 
     return json(data, response.status);
   } catch (error) {

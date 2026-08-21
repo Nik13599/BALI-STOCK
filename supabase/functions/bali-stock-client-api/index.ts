@@ -68,13 +68,14 @@ async function updateProductMeta(body: any) {
   }
   const { data: after, error } = await db.from("stock_products").update(updates).eq("product_key", key).select().single();
   if (error) throw error;
-  await db.from("stock_catalog_audit").insert({
+  const { error: auditError } = await db.from("stock_catalog_audit").insert({
     action: "product_meta",
     product_key: key,
     actor: body.employee ?? null,
     before_data: before,
     after_data: after,
   });
+  if (auditError) throw auditError;
   return after;
 }
 
@@ -138,11 +139,12 @@ Deno.serve(async (req: Request) => {
       });
       const scanId = body?.metadata?.invoice_scan_id;
       if (scanId) {
-        await db.from("stock_invoice_scans").update({
+        const { error: scanUpdateError } = await db.from("stock_invoice_scans").update({
           status: "applied",
           operation_id: result,
           updated_at: new Date().toISOString(),
-        }).eq("id", scanId);
+        }).eq("id", scanId).select("id").maybeSingle();
+        if (scanUpdateError) console.error(`invoice scan ${scanId} status update failed: ${scanUpdateError.message}`);
       }
     } else if (action === "writeoff") {
       result = await rpc("stock_apply_writeoff", {
@@ -331,7 +333,7 @@ Deno.serve(async (req: Request) => {
         p_total_count: body.total_count ?? 0,
         p_payload: body.payload ?? {},
       });
-      return json({ ok: true });
+      return json({ ok: true, snapshot: await snapshot(req) });
     } else if (action === "draft_delete") {
       const employee = String(body.employee ?? "").trim();
       if (!employee) throw new Error("employee required");

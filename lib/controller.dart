@@ -713,7 +713,11 @@ class WarehouseController extends ChangeNotifier {
   Future<void> _applyResponseSnapshot(Map<String, dynamic> response) async {
     final raw = response['snapshot'];
     if (raw is! Map) throw StateError('Сервер не вернул обновлённое состояние склада');
-    final snapshot = Map<String, dynamic>.from(raw);
+    await applySharedSnapshot(Map<String, dynamic>.from(raw));
+  }
+
+  @protected
+  Future<void> applySharedSnapshot(Map<String, dynamic> snapshot) async {
     await _syncRepository.applySnapshot(snapshot);
     _lastRemoteVersion = _asInt(snapshot['version']);
     _sharedOnline = true;

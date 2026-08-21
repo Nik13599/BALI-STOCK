@@ -36,18 +36,73 @@ class OfflineMutationRepository {
   }
 
   Future<String> enqueue(String actionType, Map<String, dynamic> payload) async {
+    return enqueueLatest(actionType, payload);
+  }
+
+  Future<String> enqueueLatest(
+    String actionType,
+    Map<String, dynamic> payload, {
+    String? coalesceKey,
+  }) async {
     await ensureSchema();
     final db = await _database.database;
     final actionId = _newActionId();
-    final body = <String, dynamic>{...payload, 'client_action_id': actionId};
-    await db.insert('sync_outbox', {
-      'action_id': actionId,
-      'action_type': actionType,
-      'payload_json': jsonEncode(body),
-      'created_at': DateTime.now().toUtc().toIso8601String(),
-      'attempts': 0,
+    final body = <String, dynamic>{
+      ...payload,
+      'client_action_id': actionId,
+      if (coalesceKey != null) 'client_coalesce_key': coalesceKey,
+    };
+    await db.transaction((txn) async {
+      if (coalesceKey != null) {
+        final existing = await txn.query(
+          'sync_outbox',
+          columns: ['id', 'payload_json'],
+          where: 'action_type = ?',
+          whereArgs: [actionType],
+        );
+        for (final row in existing) {
+          try {
+            final decoded = jsonDecode(row['payload_json'] as String);
+            if (decoded is Map && decoded['client_coalesce_key'] == coalesceKey) {
+              await txn.delete('sync_outbox', where: 'id = ?', whereArgs: [row['id']]);
+            }
+          } catch (_) {
+            // Keep an unreadable legacy entry for normal retry/error reporting.
+          }
+        }
+      }
+      await txn.insert('sync_outbox', {
+        'action_id': actionId,
+        'action_type': actionType,
+        'payload_json': jsonEncode(body),
+        'created_at': DateTime.now().toUtc().toIso8601String(),
+        'attempts': 0,
+      });
     });
     return actionId;
+  }
+
+  Future<void> removeCoalesced(String actionType, String coalesceKey) async {
+    await ensureSchema();
+    final db = await _database.database;
+    await db.transaction((txn) async {
+      final existing = await txn.query(
+        'sync_outbox',
+        columns: ['id', 'payload_json'],
+        where: 'action_type = ?',
+        whereArgs: [actionType],
+      );
+      for (final row in existing) {
+        try {
+          final decoded = jsonDecode(row['payload_json'] as String);
+          if (decoded is Map && decoded['client_coalesce_key'] == coalesceKey) {
+            await txn.delete('sync_outbox', where: 'id = ?', whereArgs: [row['id']]);
+          }
+        } catch (_) {
+          // Do not delete an entry whose identity cannot be verified.
+        }
+      }
+    });
   }
 
   Future<int> pendingCount() async {
