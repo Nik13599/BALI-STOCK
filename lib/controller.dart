@@ -484,16 +484,18 @@ class WarehouseController extends ChangeNotifier {
 
   Future<void> deleteStocktakeDraft(int draftId) async {
     final draft = await _syncRepository.readDraft(draftId);
+    final pin = _requireSessionPin();
     if (!_sharedOnline) {
       throw StateError('Чтобы удалить общий черновик и начать заново, восстановите интернет. Текущий черновик можно продолжить офлайн.');
     }
+    final response = await _remote.deleteDraft(
+      pin: pin,
+      employee: draft.employeeName,
+      startedAt: draft.startedAt,
+    );
     await _repository.deleteStocktakeDraft(draftId);
     _draftSyncTimers.remove(draftId)?.cancel();
-    await _reloadDrafts();
-    final pin = _sessionPin;
-    if (pin != null) {
-      await _remote.deleteDraft(pin: pin, employee: draft.employeeName);
-    }
+    await _applyResponseSnapshot(response);
   }
 
   Future<int> completeStocktakeDraft(

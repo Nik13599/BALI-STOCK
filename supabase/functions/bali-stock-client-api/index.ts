@@ -333,8 +333,26 @@ Deno.serve(async (req: Request) => {
       });
       return json({ ok: true });
     } else if (action === "draft_delete") {
-      await rpc("stock_delete_draft", { p_employee: body.employee ?? "" });
-      return json({ ok: true });
+      const employee = String(body.employee ?? "").trim();
+      if (!employee) throw new Error("employee required");
+      const employeeKey = employee.toLowerCase();
+      let deletion = db
+        .from("stock_draft_mirrors")
+        .delete()
+        .eq("employee_key", employeeKey);
+      const startedAt = String(body.started_at ?? "").trim();
+      if (startedAt) deletion = deletion.eq("started_at", startedAt);
+      const { data: deletedRows, error: deleteError } = await deletion
+        .select("employee_key,started_at");
+      if (deleteError) throw deleteError;
+      if ((deletedRows ?? []).length) await rpc("stock_bump_version", {});
+      const out = await snapshot(req);
+      return json({
+        ok: true,
+        deleted: (deletedRows ?? []).length > 0,
+        deleted_count: (deletedRows ?? []).length,
+        snapshot: out,
+      });
     } else {
       return json({ error: "UNKNOWN_ACTION" }, 400);
     }

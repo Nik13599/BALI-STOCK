@@ -17,6 +17,7 @@ SCANNER_COMPAT_MODULE = ROOT / "ios-web" / "ios-scanner-compat.js"
 PERFORMANCE_MODULE = ROOT / "ios-web" / "ios-runtime-performance.js"
 MOBILE_STOCKTAKE_MODULE = ROOT / "ios-web" / "mobile-stocktake-compact-v105.js"
 MODULES = {
+    "bali-v14-scan-workflows": ROOT / "ios-web" / "v14-scan-workflows.js",
     "bali-v15-ui": ROOT / "ios-web" / "v15-ui.js",
     "bali-v15-delivery-link": ROOT / "ios-web" / "v15-delivery-link.js",
     "bali-v15-compat": ROOT / "ios-web" / "v15-compat.js",
@@ -170,6 +171,9 @@ def main() -> None:
         "focusMode: 'continuous'",
         "__BALI_STOCK_IOS_RUNTIME_PERFORMANCE__",
         "__BALI_STOCK_MOBILE_STOCKTAKE_COMPACT__",
+        "Назначить код товару",
+        "Найти товар вручную",
+        "__baliResolveProductCode",
         "bali-html5-qrcode-v238",
     ]
     missing = [value for value in required if value not in html]

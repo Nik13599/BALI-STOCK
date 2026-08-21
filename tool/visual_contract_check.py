@@ -14,14 +14,15 @@ BINARY_HASHES = {
 
 TEXT_HASHES = {
     "assets/branding/bali_stock_logo.svg": "39bcc2fcbcf8146da8a3070b8b0389acc63c281342853948eb0836b8b0d302ca",
+    "ios-web/v14-scan-workflows.js": "894f962a653acb2a19161723d1cb9aee5a629826475c8707b82bcd13d05e7d5e",
     "ios-web/v15-ui.js": "f58ae884a317523464311a83d0372617b7a349a07fbda12ece72df071b19dbf5",
     "ios-web/v15-delivery-link.js": "df0ce1ce86cbd94717deb0681717d5e5fe913f610804d9c83711494d409a2588",
     "ios-web/v15-compat.js": "a9e51aca12da6bfc45b996edcb0178e7eb6ab5a48a293832f7287ff38968dc0c",
-    "ios-web/v16-catalog-history.js": "ce90ee87f4d6d6d7e8b20307c5406af518dff7c91a1d18174d4d3896933d2113",
-    "ios-web/mobile-stocktake-compact-v105.js": "8a5c94c3ad22dd1ebcd5efc5cc229aeb6ecb83d713b2e8e4eecee19b38f75efb",
+    "ios-web/v16-catalog-history.js": "557c8977062c7fcf4505006559e5408ef0234cb6f25a23cc3ad198f1fa4ff79c",
+    "ios-web/mobile-stocktake-compact-v105.js": "533d6a9893eaf437a23e0b283d8ea403c00cc04eae29a54cad98973c56bbeb6c",
 }
 
-FLUTTER_UI_SHA256 = "86f1d13969f8c92497d1f990ab01add4642a17deced117cbe1c21e2e224ca3e3"
+FLUTTER_UI_SHA256 = "0630555eec08864847106773d5f991c87b9a1000e21bda9de20866cc9d5fd7e2"
 
 
 def digest(data: bytes) -> str:

@@ -32,29 +32,22 @@ class _HomeV14ScreenState extends State<HomeV14Screen> {
   Future<void> _manualCode() async {
     final code = await enterProductCode(context);
     if (!mounted || code == null || code.trim().isEmpty) return;
-    _handleCode(code);
+    await _handleCode(code);
   }
 
   Future<void> _scan() async {
     final code = await scanProductCode(context);
     if (!mounted || code == null || code.trim().isEmpty) return;
-    _handleCode(code);
+    await _handleCode(code);
   }
 
-  void _handleCode(String code) {
-    final product = findProductByCode(widget.controller.products, code);
-    if (product != null) {
-      _open(product);
-      return;
-    }
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Товар не найден'),
-        content: SelectableText('Код товара «${code.trim()}» не привязан к позиции склада. Привязать код можно в карточке/редактировании товара.'),
-        actions: [TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('Закрыть'))],
-      ),
+  Future<void> _handleCode(String code) async {
+    final product = await resolveProductCode(
+      context,
+      controller: widget.controller,
+      rawCode: code,
     );
+    if (mounted && product != null) _open(product);
   }
 
   @override

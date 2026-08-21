@@ -50,7 +50,7 @@
     document.querySelectorAll('.ce').forEach(function (x) { x.oninput = function () { var l = count.lines.find(function (y) { return y.product_key === x.dataset.key; }); l.extra = x.value; l.rechecked = false; saveCount(); render(); }; });
     document.querySelectorAll('.cc').forEach(function (x) { x.oninput = function () { var l = count.lines.find(function (y) { return y.product_key === x.dataset.key; }); l.comment = x.value; saveCount(); }; });
     var restart = document.getElementById('cntRestart');
-    if (restart) restart.onclick = async function () { if (await confirmBox('Начать заново?', 'Все данные текущего черновика будут удалены.')) { await api('draft_delete', { employee: count.employee }, true); localStorage.removeItem('bali_count_' + count.employee.toLowerCase()); clearInterval(countTimer); count = null; render(); } };
+    if (restart) restart.onclick = async function () { if (await confirmBox('Начать заново?', 'Все данные текущего черновика будут удалены.')) { await api('draft_delete', { employee: count.employee, started_at: count.started_at || '' }, true); localStorage.removeItem('bali_count_' + count.employee.toLowerCase()); clearInterval(countTimer); count = null; render(); } };
     var finish = document.getElementById('cntFinish');
     if (finish) finish.onclick = finishCount;
     var scan = document.getElementById('cntScan');

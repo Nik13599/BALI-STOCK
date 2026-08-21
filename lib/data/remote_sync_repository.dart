@@ -151,6 +151,26 @@ class RemoteSyncRepository {
       for (final remoteDraft in remoteDrafts) {
         await _mergeRemoteDraft(txn, remoteDraft);
       }
+
+      final remoteEmployees = remoteDrafts
+          .map((draft) => '${draft['employee_name'] ?? ''}'.trim().toLowerCase())
+          .where((employee) => employee.isNotEmpty)
+          .toSet();
+      final mirroredDrafts = await txn.query(
+        'stocktake_drafts',
+        columns: ['id', 'employee_name'],
+        where: 'remote_mirrored = 1',
+      );
+      for (final localDraft in mirroredDrafts) {
+        final employee = '${localDraft['employee_name'] ?? ''}'.trim().toLowerCase();
+        if (!remoteEmployees.contains(employee)) {
+          await txn.delete(
+            'stocktake_drafts',
+            where: 'id = ?',
+            whereArgs: [localDraft['id']],
+          );
+        }
+      }
     });
   }
 
@@ -170,8 +190,22 @@ class RemoteSyncRepository {
     final employee = '${remoteDraft['employee_name'] ?? ''}'.trim();
     if (employee.isEmpty) return;
     final remoteUpdated = DateTime.tryParse('${remoteDraft['updated_at'] ?? ''}') ?? DateTime.fromMillisecondsSinceEpoch(0);
-    final existing = await txn.query('stocktake_drafts', columns: ['id', 'updated_at'], where: 'employee_name = ? COLLATE NOCASE', whereArgs: [employee], limit: 1);
+    final existing = await txn.query(
+      'stocktake_drafts',
+      columns: ['id', 'updated_at', 'remote_mirrored'],
+      where: 'employee_name = ? COLLATE NOCASE',
+      whereArgs: [employee],
+      limit: 1,
+    );
     if (existing.isNotEmpty) {
+      if ((existing.first['remote_mirrored'] as int? ?? 0) != 1) {
+        await txn.update(
+          'stocktake_drafts',
+          {'remote_mirrored': 1},
+          where: 'id = ?',
+          whereArgs: [existing.first['id']],
+        );
+      }
       final localUpdated = DateTime.tryParse('${existing.first['updated_at']}') ?? DateTime.fromMillisecondsSinceEpoch(0);
       if (!remoteUpdated.isAfter(localUpdated)) return;
       await txn.delete('stocktake_drafts', where: 'id = ?', whereArgs: [existing.first['id']]);
@@ -189,6 +223,7 @@ class RemoteSyncRepository {
       'active_seconds': _asInt(remoteDraft['active_seconds']),
       'last_product_id': null,
       'total_count': _asInt(remoteDraft['total_count'], fallback: linePayloads.length),
+      'remote_mirrored': 1,
     });
 
     for (final line in linePayloads) {

@@ -44,6 +44,9 @@ jobs:
               '__BALI_STOCK_IOS_RUNTIME_PERFORMANCE__',
               'bali-html5-qrcode-v238',
               'baliPollSnapshotVersion',
+              'Назначить код товару',
+              'Найти товар вручную',
+              '__baliResolveProductCode',
           ]
           forbidden = [
               'raw.githack.com',

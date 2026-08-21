@@ -28,7 +28,7 @@ class BaliStockDatabase {
     return factory.openDatabase(
       p.join(dbPath, 'bali_stock.db'),
       options: OpenDatabaseOptions(
-        version: 7,
+        version: 8,
         onConfigure: (db) async {
           await db.execute('PRAGMA foreign_keys = ON');
         },
@@ -89,6 +89,17 @@ class BaliStockDatabase {
           if (oldVersion < 6) {
             await _migrateV6(db);
           }
+          if (oldVersion < 8) {
+            await db.execute(
+              'ALTER TABLE stocktake_drafts ADD COLUMN remote_mirrored INTEGER NOT NULL DEFAULT 0',
+            );
+            // Drafts created by earlier releases were treated as shared. Mark
+            // them so a server-side deletion is applied on the first v8 sync.
+            await db.update(
+              'stocktake_drafts',
+              {'remote_mirrored': 1},
+            );
+          }
           await _createIndexes(db);
           await _seedCatalog(db);
         },
@@ -147,7 +158,8 @@ class BaliStockDatabase {
         updated_at TEXT NOT NULL,
         active_seconds INTEGER NOT NULL DEFAULT 0,
         last_product_id INTEGER,
-        total_count INTEGER NOT NULL DEFAULT 0
+        total_count INTEGER NOT NULL DEFAULT 0,
+        remote_mirrored INTEGER NOT NULL DEFAULT 0
       )
     ''');
     await db.execute('''

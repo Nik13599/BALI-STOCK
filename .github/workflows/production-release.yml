@@ -237,7 +237,7 @@ jobs:
           assert clip['Icon'] == Path('assets/branding/bali_stock_logo.png').read_bytes()
 
           html = Path('dist/ios-runtime/bali-stock.html').read_text(encoding='utf-8')
-          required = ['__BALI_STOCK_IOS_SCANNER_COMPAT__', '__BALI_STOCK_IOS_LIVE_SCANNER__', 'formats.EAN_13', 'config.fps = Math.max(15', "focusMode: 'continuous'", '__BALI_STOCK_IOS_RUNTIME_PERFORMANCE__', '__BALI_STOCK_VISUAL_CONTRACT__', 'bali-html5-qrcode-v238', 'baliPollSnapshotVersion']
+          required = ['__BALI_STOCK_IOS_SCANNER_COMPAT__', '__BALI_STOCK_IOS_LIVE_SCANNER__', 'formats.EAN_13', 'config.fps = Math.max(15', "focusMode: 'continuous'", '__BALI_STOCK_IOS_RUNTIME_PERFORMANCE__', '__BALI_STOCK_VISUAL_CONTRACT__', 'bali-html5-qrcode-v238', 'baliPollSnapshotVersion', 'Назначить код товару', 'Найти товар вручную', '__baliResolveProductCode']
           assert not [value for value in required if value not in html]
           forbidden = ['raw.githack.com', 'raw.githubusercontent.com/Nik13599/BALI-STOCK', 'cdn.jsdelivr.net/npm/html5-qrcode', 'Введите пароль доступа', 'Пароль не введён', 'Неверный пароль', 'x-bali-stock-pin', "input.setAttribute('capture', 'environment')", 'scanner.scanFile(file, true)']
           assert not [value for value in forbidden if value in html]

@@ -182,7 +182,7 @@
     var drafts=(S.drafts||[]).filter(function(d){return clean(d.status)!=='completed';});
     var old=document.getElementById('v16DraftHistory');
     if (!drafts.length) { if(old)old.remove(); return; }
-    if (old) return;
+    if (old) old.remove();
     var app=document.getElementById('app');
     if(!app)return;
     var box=document.createElement('div');
@@ -192,7 +192,7 @@
     box.innerHTML='<div class="name">Черновики переучёта</div><div class="muted" style="margin:5px 0 9px">Удалять можно только черновики. Проведённые операции не удаляются.</div>'+drafts.map(function(d){return '<div class="card" style="margin:7px 0"><div class="row"><div class="grow"><b>'+h(d.employee_name||'Без ФИО')+'</b><div class="muted">'+h(d.status||'draft')+' • заполнено '+h(d.filled_count||0)+' / '+h(d.total_count||0)+'</div></div><button class="danger v16DeleteDraft" data-key="'+h(draftKey(d))+'">Удалить</button></div></div>';}).join('');
     var section=app.querySelector('.section');
     if(section)section.insertBefore(box,section.firstChild);else app.insertBefore(box,app.firstChild);
-    box.querySelectorAll('.v16DeleteDraft').forEach(function(b){b.onclick=async function(){var d=drafts.find(function(x){return draftKey(x)===b.dataset.key;});if(!d)return;var ok=await confirmBox('Удалить черновик?','Черновик будет удалён без возможности восстановления. Завершённые операции останутся в истории.');if(!ok)return;try{await api('draft_delete',{employee:d.employee_name||''},true);await snapshot();render();toast('Черновик удалён');}catch(e){toast(String(e&&e.message?e.message:e),true);}};});
+    box.querySelectorAll('.v16DeleteDraft').forEach(function(b){b.onclick=async function(){var d=drafts.find(function(x){return draftKey(x)===b.dataset.key;});if(!d)return;var ok=await confirmBox('Удалить черновик?','Черновик будет удалён без возможности восстановления. Завершённые операции останутся в истории.');if(!ok)return;try{await api('draft_delete',{employee:d.employee_name||'',started_at:d.started_at||''},true);await snapshot();render();toast('Черновик удалён');}catch(e){toast(String(e&&e.message?e.message:e),true);}};});
   }
 
   function enhance() {
