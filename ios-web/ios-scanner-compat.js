@@ -20,6 +20,7 @@
   function needsNativeCapture() {
     var protocol = String(window.location && window.location.protocol ? window.location.protocol : '');
     return isIos() && (
+      navigator.standalone === true ||
       protocol.indexOf('blob') === 0 ||
       !window.isSecureContext ||
       !navigator.mediaDevices ||
@@ -61,6 +62,8 @@
 
     // start() is called from the existing scan button, so the native picker
     // opens inside the same user gesture without adding buttons or icons.
+    // iOS Web Clips use this path even on HTTPS because camera streams are
+    // less reliable in standalone mode than the system capture picker.
     input.click();
     return Promise.resolve();
   }

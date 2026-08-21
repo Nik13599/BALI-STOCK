@@ -113,9 +113,13 @@ jobs:
             const context = {
               Html5Qrcode,
               document,
-              navigator: { userAgent: 'iPhone', platform: 'iPhone', maxTouchPoints: 5 },
-              location: { protocol: 'blob:' },
-              isSecureContext: false,
+              navigator: {
+                userAgent: 'iPhone', platform: 'iPhone', maxTouchPoints: 5,
+                standalone: true,
+                mediaDevices: { getUserMedia() { throw new Error('WebClip must use native capture'); } },
+              },
+              location: { protocol: 'https:' },
+              isSecureContext: true,
               alert(message) { throw new Error(message); },
               console,
             };
@@ -134,7 +138,7 @@ jobs:
             await new Promise((resolve) => setImmediate(resolve));
             if (decoded !== 'BALI-123') throw new Error('Captured barcode was not returned');
             if (createdInput !== null) throw new Error('Temporary capture input was not removed');
-            console.log('iPhone Blob scanner compatibility OK without new UI controls');
+            console.log('iPhone WebClip scanner compatibility OK without new UI controls');
           })().catch((error) => { console.error(error); process.exit(1); });
           JS
 
