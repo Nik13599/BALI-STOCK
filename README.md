@@ -1,4 +1,4 @@
-# BALI STOCK 1.0.2
+# BALI STOCK 1.0.6
 
 Кроссплатформенное приложение складского учёта и переучёта для BALI.
 
@@ -22,7 +22,9 @@
 - PDF текущих остатков и операций.
 - Общая Supabase-база и локальный SQLite-кэш для автономной работы Flutter-клиентов.
 - Пользовательские пароли/PIN не используются.
-- iPhone Web Clip использует стабильный Supabase runtime без зависимости от GitHub Pages/raw GitHub и имеет защитный fallback обновления складского снимка, чтобы отсутствие `snapshot()` не блокировало интерфейс.
+- iPhone Web Clip сохраняет прежний стабильный Supabase URL и исходный интерфейс 1.0.5. Edge Function переключает его на camera-safe HTTPS-документ только после проверки версии и визуального контракта.
+- iPhone-сканер содержит резервное распознавание снимка: если WebKit не запускает live-видео, код можно сфотографировать системной камерой.
+- Логотипы, экраны, навигационные значки и UI-модули защищены автоматической проверкой и не изменяются техническим обновлением.
 - Кастомные навигационные иконки используются в Flutter-клиентах и iPhone Web Clip.
 
 ## Production-установщики
@@ -46,9 +48,9 @@ Workflow `Release BALI STOCK Production` формирует стабильные
 
 ### iPhone / iPad
 
-Откройте `BALI-STOCK-iPhone.mobileconfig` на устройстве. Затем установите загруженный профиль через настройки iOS. Профиль добавит BALI STOCK на экран Домой и будет открывать актуальную серверную Web Clip-версию через стабильный Supabase runtime.
+Откройте `BALI-STOCK-iPhone.mobileconfig` на устройстве. Затем установите загруженный профиль через настройки iOS. Профиль добавит BALI STOCK на экран Домой и будет открывать актуальную Web Clip-версию через прежний стабильный Supabase URL.
 
-Повторно устанавливать профиль для обычных обновлений интерфейса не требуется: production runtime обновляется за тем же URL.
+Профиль, URL, подпись и значок совпадают с production-версией 1.0.5, поэтому переустанавливать уже установленный профиль из-за этого технического обновления не требуется.
 
 ## Проверка качества перед release
 
@@ -59,10 +61,10 @@ Production и PR-gate выполняют:
 3. `flutter test`
 4. release-сборки Android / Windows / iOS
 5. проверку постоянной Android production-подписи
-6. проверку iPhone runtime и всех встроенных JavaScript-блоков
-7. проверку отсутствия GitHub runtime-зависимости и пользовательских password/PIN flow
+6. проверку iPhone runtime, HTTPS `Content-Type`, встроенного сканера и всех JavaScript-блоков
+7. проверку защищённого выбора iPhone runtime и отсутствия пользовательских password/PIN flow
 
-Отдельные workflow `iPhone Runtime Smoke` и `iPhone Production Runtime Builder Smoke` проверяют production Web Clip, навигацию, синтаксис встроенного JavaScript, Supabase runtime и регрессию, при которой `snapshot()` отсутствует в базовом iPhone runtime.
+Отдельные workflow `iPhone Runtime Smoke` и `iPhone Production Runtime Builder Smoke` проверяют production Web Clip, навигацию, синтаксис встроенного JavaScript, camera-safe runtime, исходный визуальный контракт, встроенную библиотеку сканера и регрессию, при которой `snapshot()` отсутствует в базовом iPhone runtime.
 
 `tool/code_health_check.py` проверяет повторяющиеся импорты, последовательные дубли строк, клоны крупных блоков, хвостовые пробелы, дубли SKU в стартовом каталоге и Dart-файлы, которые больше не достижимы от `lib/main.dart`.
 
@@ -80,4 +82,4 @@ Production и PR-gate выполняют:
 
 ## Версия
 
-Текущая release candidate: `1.0.2+102`.
+Текущая release candidate: `1.0.6+106`.

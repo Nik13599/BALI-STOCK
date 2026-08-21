@@ -57,7 +57,7 @@ void main() {
     expect(history.contains('operation, required this.onPdf, required this.onOpen, required this.onDelete'), isFalse);
   });
 
-  test('iPhone production profile is hosted outside the private GitHub repository', () {
+  test('iPhone production profile preserves the stable URL and original interface', () {
     final generator = File('tool/generate_mobileconfig.py').readAsStringSync();
     final catalog = File('ios-web/v16-catalog-history.js').readAsStringSync();
     final ui = File('ios-web/v15-ui.js').readAsStringSync();
@@ -68,7 +68,8 @@ void main() {
     expect(generator.contains('raw.githack.com'), isFalse);
     expect(generator.contains('raw.githubusercontent.com'), isFalse);
     expect(generator.contains('production-версию BALI STOCK'), isTrue);
-    expect(smoke.contains("assert data['github_dependency'] is False"), isTrue);
+    expect(smoke.contains("assert clip['Icon'] == Path('assets/branding/bali_stock_logo.png').read_bytes()"), isTrue);
+    expect(smoke.contains("assert data['interface_guard'] is True"), isTrue);
     expect(smoke.contains("assert data['password_prompt'] is False"), isTrue);
     expect(catalog.contains('__BALI_STOCK_V16_CATALOG_HISTORY__'), isTrue);
     expect(catalog.contains('ДОБАВИТЬ НОВЫЙ ТОВАР'), isTrue);

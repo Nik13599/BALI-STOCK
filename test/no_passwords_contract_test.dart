@@ -51,15 +51,16 @@ void main() {
     expect(legacy.contains('INVALID_PIN'), isFalse);
   });
 
-  test('iPhone installation profile is independent from GitHub', () {
+  test('iPhone installation profile keeps the production URL and visual contract', () {
     final generator = File('tool/generate_mobileconfig.py').readAsStringSync();
     final smoke = File('.github/workflows/iphone-runtime-smoke.yml').readAsStringSync();
 
     expect(generator.contains('/functions/v1/bali-stock-ios-runtime'), isTrue);
     expect(generator.contains('raw.githack.com'), isFalse);
     expect(generator.contains('raw.githubusercontent.com'), isFalse);
-    expect(smoke.contains("assert 'github' not in clip['URL'].lower()"), isTrue);
-    expect(smoke.contains("assert data['github_dependency'] is False"), isTrue);
+    expect(smoke.contains("assert clip['FullScreen'] is True"), isTrue);
+    expect(smoke.contains("assert clip['Icon'] == Path('assets/branding/bali_stock_logo.png').read_bytes()"), isTrue);
+    expect(smoke.contains("assert data['interface_guard'] is True"), isTrue);
     expect(smoke.contains("assert data['password_prompt'] is False"), isTrue);
   });
 
@@ -77,14 +78,17 @@ void main() {
     expect(runtimeBuilder.contains('raw.githack.com'), isTrue); // forbidden-content check only
     expect(runtimeBuilder.contains('raw.githubusercontent.com/Nik13599/BALI-STOCK'), isTrue); // forbidden-content check only
     expect(runtimeBuilder.contains('RUNTIME_URL = "https://mvnxfouyoynqyjdpcblh.supabase.co/functions/v1/bali-stock-ios-runtime"'), isTrue);
+    expect(runtimeBuilder.contains('SCANNER_LIBRARY_SHA256'), isTrue);
+    expect(runtimeBuilder.contains('__BALI_STOCK_VISUAL_CONTRACT__'), isTrue);
   });
 
-  test('obsolete GitHub Pages application channel is retired', () {
+  test('GitHub Pages recovery channel deploys the camera-safe runtime', () {
     final pages = File('.github/workflows/pages-v12-fixed.yml').readAsStringSync();
     expect(pages.contains('workflow_dispatch'), isTrue);
     expect(pages.contains('push:'), isFalse);
-    expect(pages.contains('actions/deploy-pages'), isFalse);
-    expect(pages.contains('intentionally retired'), isTrue);
+    expect(pages.contains('actions/deploy-pages@v5'), isTrue);
+    expect(pages.contains('actions/upload-pages-artifact@v5'), isTrue);
+    expect(pages.contains('__BALI_STOCK_IOS_SCANNER_COMPAT__'), isTrue);
   });
 
   test('password removal remains an update of the production baseline', () {

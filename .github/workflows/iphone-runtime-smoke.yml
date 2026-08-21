@@ -15,7 +15,7 @@ jobs:
   runtime-smoke:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Validate local iPhone UI modules
         run: |
           python3 - <<'PY'
@@ -74,6 +74,73 @@ jobs:
           node --check ios-web/v15-delivery-link.js
           node --check ios-web/v15-compat.js
           node --check ios-web/v16-catalog-history.js
+          node --check ios-web/ios-scanner-compat.js
+          node --check ios-web/ios-runtime-performance.js
+
+      - name: Verify iPhone Blob scanner uses the existing scan action without UI changes
+        run: |
+          node - <<'JS'
+          const fs = require('fs');
+          const vm = require('vm');
+
+          (async () => {
+            let originalStartCalls = 0;
+            let decoded = '';
+            let createdInput = null;
+            let changeHandler = null;
+            let pickerOpened = false;
+
+            function Html5Qrcode() {}
+            Html5Qrcode.prototype.start = function () { originalStartCalls += 1; return Promise.resolve(); };
+            Html5Qrcode.prototype.scanFile = function () { return Promise.resolve('BALI-123'); };
+
+            const body = {
+              appendChild(node) { node.parentNode = body; createdInput = node; },
+              removeChild(node) { if (createdInput === node) createdInput = null; node.parentNode = null; },
+            };
+            const document = {
+              body,
+              createElement(tag) {
+                if (tag !== 'input') throw new Error('Unexpected visible element: ' + tag);
+                return {
+                  style: {}, files: [{ name: 'barcode.jpg' }], parentNode: null,
+                  setAttribute(name, value) { this[name] = value; },
+                  addEventListener(name, handler) { if (name === 'change') changeHandler = handler; },
+                  click() { pickerOpened = true; },
+                };
+              },
+            };
+            const context = {
+              Html5Qrcode,
+              document,
+              navigator: {
+                userAgent: 'iPhone', platform: 'iPhone', maxTouchPoints: 5,
+                standalone: true,
+                mediaDevices: { getUserMedia() { throw new Error('WebClip must use native capture'); } },
+              },
+              location: { protocol: 'https:' },
+              isSecureContext: true,
+              alert(message) { throw new Error(message); },
+              console,
+            };
+            context.window = context;
+            vm.createContext(context);
+            vm.runInContext(fs.readFileSync('ios-web/ios-scanner-compat.js', 'utf8'), context);
+
+            const scanner = new context.Html5Qrcode();
+            await scanner.start({}, {}, (value) => { decoded = value; }, () => {});
+            if (!pickerOpened) throw new Error('Native iPhone camera picker was not opened');
+            if (originalStartCalls !== 0) throw new Error('Blob getUserMedia path was still called');
+            if (!createdInput || createdInput.capture !== 'environment' || createdInput.style.display !== 'none') {
+              throw new Error('Hidden native capture input contract failed');
+            }
+            await changeHandler();
+            await new Promise((resolve) => setImmediate(resolve));
+            if (decoded !== 'BALI-123') throw new Error('Captured barcode was not returned');
+            if (createdInput !== null) throw new Error('Temporary capture input was not removed');
+            console.log('iPhone WebClip scanner compatibility OK without new UI controls');
+          })().catch((error) => { console.error(error); process.exit(1); });
+          JS
 
       - name: Regression test missing snapshot does not crash compat layer
         run: |
@@ -108,7 +175,7 @@ jobs:
           console.log('Missing snapshot regression guard OK');
           JS
 
-      - name: Validate generated iPhone profile uses Supabase only
+      - name: Validate generated iPhone profile keeps the production URL and icon
         run: |
           python tool/generate_mobileconfig.py
           python3 - <<'PY'
@@ -119,15 +186,15 @@ jobs:
               profile = plistlib.load(f)
           clip = profile['PayloadContent'][0]
           assert clip['URL'] == expected, clip['URL']
-          assert 'github' not in clip['URL'].lower(), clip['URL']
+          assert clip['FullScreen'] is True
+          assert clip['Icon'] == Path('assets/branding/bali_stock_logo.png').read_bytes()
           print('iPhone profile endpoint OK:', clip['URL'])
           PY
+          python tool/visual_contract_check.py --mobileconfig dist/ios/BALI-STOCK-iPhone.mobileconfig
 
-      - name: Fetch production iPhone runtime
+      - name: Build candidate iPhone runtime
         run: |
-          curl --fail --silent --show-error \
-            "https://mvnxfouyoynqyjdpcblh.supabase.co/functions/v1/bali-stock-ios-runtime?ci=${GITHUB_RUN_ID}" \
-            -o /tmp/bali-stock-ios-runtime.html
+          python tool/build_ios_production_runtime.py --output /tmp/bali-stock-ios-runtime.html
           test -s /tmp/bali-stock-ios-runtime.html
           grep -qi '^<!doctype html>' /tmp/bali-stock-ios-runtime.html
 
@@ -141,6 +208,7 @@ jobs:
           forbidden = [
               'raw.githack.com',
               'raw.githubusercontent.com/Nik13599/BALI-STOCK',
+              'cdn.jsdelivr.net/npm/html5-qrcode',
               'Введите пароль доступа',
               'Пароль не введён',
               'Неверный пароль',
@@ -161,6 +229,12 @@ jobs:
               '__BALI_STOCK_V15_DELIVERY_LINK__',
               '__BALI_STOCK_V15_COMPAT__',
               '__BALI_STOCK_V16_CATALOG_HISTORY__',
+              '__BALI_STOCK_IOS_SCANNER_COMPAT__',
+              '__BALI_STOCK_IOS_RUNTIME_PERFORMANCE__',
+              '__BALI_STOCK_VISUAL_CONTRACT__',
+              'bali-html5-qrcode-v238',
+              "input.setAttribute('capture', 'environment')",
+              'baliPollSnapshotVersion',
               'async function snapshot',
               'baseSnapshot=snapshot',
               'СОХРАНИТЬ → СЛЕДУЮЩИЙ СКАН',
@@ -187,7 +261,7 @@ jobs:
               raise SystemExit(f'Expected embedded runtime scripts, got {len(scripts)}')
           for index, script in enumerate(scripts):
               Path(f'/tmp/bali-runtime-inline-{index}.js').write_text(script, encoding='utf-8')
-          print(f'Supabase production runtime contract OK; inline scripts={len(scripts)}')
+          print(f'Candidate production runtime contract OK; inline scripts={len(scripts)}')
           PY
 
       - name: Parse every production runtime inline JavaScript block
@@ -209,8 +283,20 @@ jobs:
           assert data['ok'] is True, data
           assert isinstance(data.get('version'), str) and data['version'], data
           assert isinstance(data.get('build'), int) and data['build'] > 0, data
-          assert data['source'] == 'supabase-storage', data
-          assert data['github_dependency'] is False, data
+          assert data['web_app'] == 'https://nik13599.github.io/BALI-STOCK/', data
+          assert data['interface_guard'] is True, data
+          assert data['active_target'] in {
+              'https://nik13599.github.io/BALI-STOCK/',
+              'https://raw.githack.com/Nik13599/BALI-STOCK/777265e6a60fe643e358df16484c073f061bf93b/ios-web/iphone-launcher-v107.html',
+          }, data
+          assert data['github_dependency'] is True, data
+          if data['source'] == 'github-pages':
+              assert data['camera_safe_origin'] is True, data
+              assert data['blob_launcher'] is False, data
+          else:
+              assert data['source'] == 'supabase-storage', data
+              assert data['camera_safe_origin'] is False, data
+              assert data['blob_launcher'] is True, data
           assert data['password_prompt'] is False, data
           assert data['scanner_workflows'] is True, data
           assert data['invoice_auto'] is True, data

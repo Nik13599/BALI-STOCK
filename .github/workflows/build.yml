@@ -16,7 +16,7 @@ jobs:
     name: code-health-and-tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -26,6 +26,7 @@ jobs:
       - run: flutter pub get
       - name: Check duplicate lines, code clones, dead files and whitespace
         run: python tool/code_health_check.py --fail-on-orphans --fail-on-clones
+      - run: python tool/visual_contract_check.py
       - run: flutter analyze
       - run: flutter test
       - name: Verify live Supabase production backend without mutations
@@ -36,7 +37,7 @@ jobs:
     needs: quality
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -69,7 +70,7 @@ jobs:
         run: |
           mkdir -p dist/android
           cp build/app/outputs/flutter-apk/app-release.apk dist/android/BALI-STOCK-Android-CI.apk
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: BALI-STOCK-Android-CI
           path: dist/android/BALI-STOCK-Android-CI.apk
@@ -80,7 +81,7 @@ jobs:
     needs: quality
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -105,7 +106,7 @@ jobs:
           & $iscc "/DMyAppVersion=$version" "/DMyOutputBaseFilename=BALI-STOCK-Windows-CI-Setup" "installer/windows/bali_stock.iss"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (-not (Test-Path 'dist/windows/BALI-STOCK-Windows-CI-Setup.exe')) { throw "Setup EXE was not created" }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: BALI-STOCK-Windows-CI
           path: dist/windows/BALI-STOCK-Windows-CI-Setup.exe
@@ -116,7 +117,7 @@ jobs:
     needs: quality
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -158,7 +159,7 @@ jobs:
         run: |
           mkdir -p dist/ios
           ditto -c -k --sequesterRsrc --keepParent build/ios/iphoneos/Runner.app dist/ios/BALI-STOCK-iOS-CI-unsigned.app.zip
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: BALI-STOCK-iOS-CI-unsigned
           path: dist/ios/BALI-STOCK-iOS-CI-unsigned.app.zip
@@ -169,7 +170,7 @@ jobs:
     needs: quality
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Generate iPhone installation profile
         run: python tool/generate_mobileconfig.py
       - name: Validate configuration profile
@@ -185,11 +186,12 @@ jobs:
           assert clip['PayloadType'] == 'com.apple.webClip.managed'
           expected = 'https://mvnxfouyoynqyjdpcblh.supabase.co/functions/v1/bali-stock-ios-runtime'
           assert clip['URL'] == expected, clip['URL']
-          assert 'github' not in clip['URL'].lower()
-          assert clip['Icon']
-          print('mobileconfig Supabase production runtime OK:', clip['URL'])
+          assert clip['FullScreen'] is True
+          assert clip['Icon'] == Path('assets/branding/bali_stock_logo.png').read_bytes()
+          print('mobileconfig stable Supabase runtime and original icon OK:', clip['URL'])
           PY
-      - uses: actions/upload-artifact@v4
+          python tool/visual_contract_check.py --mobileconfig dist/ios/BALI-STOCK-iPhone.mobileconfig
+      - uses: actions/upload-artifact@v7
         with:
           name: BALI-STOCK-iPhone-WebClip-CI
           path: dist/ios/BALI-STOCK-iPhone.mobileconfig

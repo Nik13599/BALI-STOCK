@@ -112,7 +112,7 @@ void main() {
     expect(source.contains("_offline.enqueue('stocktake'"), isTrue);
     expect(RegExp(r"_offline\.enqueue\(\s*'writeoff'").hasMatch(source), isTrue);
     expect(RegExp(r"_offline\.enqueue\(\s*'transfer'").hasMatch(source), isTrue);
-    expect(source.contains('Timer.periodic(const Duration(seconds: 4)'), isTrue);
+    expect(source.contains('Timer.periodic(const Duration(seconds: 15)'), isTrue);
     expect(source.contains('_flushPendingBestEffort'), isTrue);
     expect(outbox.contains('CREATE TABLE IF NOT EXISTS sync_outbox'), isTrue);
     expect(outbox.contains('client_action_id'), isTrue);

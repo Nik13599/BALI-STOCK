@@ -10,6 +10,7 @@ void main() {
     expect(source.contains('final version = await _remoteSync.fetchVersion();'), isTrue);
     expect(source.contains('if (previousVersion == null || version != previousVersion)'), isTrue);
     expect(source.contains('Future<void> _rememberRemoteVersionBestEffort() async'), isTrue);
+    expect(source.contains('Timer.periodic(const Duration(seconds: 15)'), isTrue);
 
     final tickStart = source.indexOf('Future<void> _backgroundTick() async');
     final rememberStart = source.indexOf('Future<void> _rememberRemoteVersionBestEffort() async');
@@ -29,6 +30,18 @@ void main() {
     final source = File('lib/data/remote_stock_service.dart').readAsStringSync();
     expect(source.contains("endpoint?action=version"), isTrue);
     expect(source.contains('Duration(seconds: 10)'), isTrue);
+  });
+
+  test('iPhone runtime replaces five-second full snapshots with version polling', () {
+    final builder = File('tool/build_ios_production_runtime.py').readAsStringSync();
+    final module = File('ios-web/ios-runtime-performance.js').readAsStringSync();
+    expect(builder.contains('harden_runtime_polling(html)'), isTrue);
+    expect(builder.contains('baliPollSnapshotVersion'), isTrue);
+    expect(builder.contains('},15000)'), isTrue);
+    expect(module.contains('__BALI_STOCK_IOS_RUNTIME_PERFORMANCE__'), isTrue);
+    expect(module.contains("API + '?action=version'"), isTrue);
+    expect(module.contains('if (version && version !== lastVersion)'), isTrue);
+    expect(module.contains('await snapshot();'), isTrue);
   });
 
   test('authorization compatibility call no longer performs a network round trip', () {

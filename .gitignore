@@ -3,6 +3,9 @@
 .pub/
 build/
 coverage/
+dist/
+**/__pycache__/
+supabase/.temp/
 .flutter-plugins
 .flutter-plugins-dependencies
 .metadata
